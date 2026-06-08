@@ -37,10 +37,36 @@ try:
 except ImportError:
     pass
 
-# Import MongoDB loader and VALD transformer
+# Import MongoDB loader
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from load_reports_from_mongo import MongoReportsLoader
+import importlib.util
+
+# load_reports_from_mongo.py lives in backend/ (Docker image: /app) and, in
+# local dev, may also sit at the repo root. Add both candidates to sys.path.
+_here = Path(__file__).resolve()
+_candidates = [_here.parent.parent, _here.parent.parent.parent]  # backend/, repo root
+for _c in _candidates:
+    if str(_c) not in sys.path:
+        sys.path.insert(0, str(_c))
+
+try:
+    # Standard import once the directory holding the module is on sys.path
+    from load_reports_from_mongo import MongoReportsLoader
+except ModuleNotFoundError:
+    # Fallback: load directly from whichever candidate dir actually has the file
+    loader_path = next(
+        (c / "load_reports_from_mongo.py" for c in _candidates
+         if (c / "load_reports_from_mongo.py").exists()),
+        None,
+    )
+    if loader_path is None:
+        raise
+    spec = importlib.util.spec_from_file_location("load_reports_from_mongo", loader_path)
+    if spec is None or spec.loader is None:
+        raise
+    _module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(_module)
+    MongoReportsLoader = _module.MongoReportsLoader
 
 
 class MongoReportsInjector:

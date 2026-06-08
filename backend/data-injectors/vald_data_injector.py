@@ -36,9 +36,14 @@ try:
 except ImportError:
     pass
 
-# Import VALD transformer
+# Import VALD transformer.
+# fetch_and_transform_vald.py lives in backend/ (Docker image: /app) and, in
+# local dev, may also sit at the repo root. Add both candidates to sys.path.
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+_here = Path(__file__).resolve()
+for _c in (_here.parent.parent, _here.parent.parent.parent):  # backend/, repo root
+    if str(_c) not in sys.path:
+        sys.path.insert(0, str(_c))
 from fetch_and_transform_vald import VALDTransformer
 
 

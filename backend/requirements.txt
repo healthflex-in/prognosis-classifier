@@ -5,6 +5,9 @@ langchain>=0.3.0
 # Google GenAI
 google-genai>=0.2.0
 
+# Vertex AI chat model (ChatVertexAI) used by the prognosis agent
+langchain-google-vertexai>=3.0.0
+
 # Pydantic for validation
 pydantic>=2.0.0
 
@@ -14,9 +17,15 @@ pymongo>=4.0.0
 # Environment variables
 python-dotenv>=1.0.0
 
+# YAML parsing for prompt config
+pyyaml>=6.0.0
+
 # Date/time handling (usually included with Python, but listed for completeness)
 # datetime is built-in
 
 # FastAPI for backend API
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+
+# Scheduling
+apscheduler>=3.10.0
