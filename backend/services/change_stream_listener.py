@@ -212,6 +212,13 @@ class ChangeStreamListener:
         try:
             print(f"🔄 Processing change for patient: {patient_id}")
 
+            # Idempotency guard: skip regeneration if we already have a prognosis
+            # at least as new as the first-assessment report. Stops redundant LLM
+            # calls when an external sync re-writes `reports` without real changes.
+            if self._prognosis_already_current(patient_id):
+                print(f"⏭️  Prognosis already current for {patient_id}, skipping regeneration")
+                return
+
             # Build the agent input from the first-assessment report + VALD.
             # Shared with the prognosis queue worker so every path is identical.
             patient_data = build_patient_data_from_reports(self.db, patient_id)
@@ -231,6 +238,39 @@ class ChangeStreamListener:
             print(f"❌ Error generating prognosis for {patient_id}: {e}")
             import traceback
             traceback.print_exc()
+
+    @staticmethod
+    def _as_utc(v):
+        """Normalize a Mongo timestamp (datetime or epoch-ms number) to tz-aware UTC."""
+        from datetime import datetime as _dt, timezone as _tz
+        if isinstance(v, _dt):
+            return v if v.tzinfo else v.replace(tzinfo=_tz.utc)
+        if isinstance(v, (int, float)):
+            return _dt.fromtimestamp(v / 1000, tz=_tz.utc)
+        return None
+
+    def _prognosis_already_current(self, patient_id: str) -> bool:
+        """True when an existing prognosis is at least as new as the patient's
+        first-assessment report — i.e. nothing meaningful changed, skip regen.
+        Defaults to False (regenerate) whenever it can't compare, to stay safe."""
+        try:
+            pid_obj = ObjectId(patient_id) if isinstance(patient_id, str) and len(patient_id) == 24 else patient_id
+            existing = (self.db.prognosis.find_one({"patient_id": pid_obj}, {"updated_at": 1})
+                        or self.db.prognosis.find_one({"patient_id": str(pid_obj)}, {"updated_at": 1}))
+            if not existing:
+                return False  # no prognosis yet → generate
+            report = self.db.reports.find_one(
+                {"patient": pid_obj, "isFirstAssessment": True}, {"updatedAt": 1}
+            )
+            if not report:
+                return False
+            report_dt = self._as_utc(report.get("updatedAt"))
+            prog_dt = self._as_utc(existing.get("updated_at"))
+            if report_dt is None or prog_dt is None:
+                return False  # can't compare → regenerate
+            return report_dt <= prog_dt
+        except Exception:
+            return False  # on any error, prefer to regenerate
     
     def _save_classification_to_mongo(self, classification):
         """

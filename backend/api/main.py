@@ -166,34 +166,49 @@ async def websocket_manual_prognosis(websocket: WebSocket):
     Same generation + persistence path as the daily cron and the queue worker.
     """
     await websocket.accept()
+    print("📥 /ws manual prognosis: connection accepted, waiting for message...")
     try:
         msg = await websocket.receive_json()
+        print(f"📥 /ws received message: {msg}")
         patient_id = msg.get("patient_id")
         if not patient_id:
+            print("⚠️  /ws: no patient_id in message")
             await websocket.send_json({"error": "patient_id is required"})
             await websocket.close()
             return
 
+        print(f"🔄 /ws manual prognosis for patient: {patient_id}")
         # Reuse the queue singleton's agent + db handle (agent is expensive to build)
         queue = PrognosisQueue()
         db = await asyncio.to_thread(queue._get_db)
         patient_data = await asyncio.to_thread(build_patient_data_from_reports, db, patient_id)
         if not patient_data:
+            print(f"⚠️  /ws: no usable first-assessment report for {patient_id}")
             await websocket.send_json({"error": f"No usable first-assessment report for patient {patient_id}"})
             await websocket.close()
             return
 
+        vald_n = len(patient_data.get("vald_exercises") or {})
+        print(f"   👤 {patient_data.get('patient_name')} | VALD exercises: {vald_n} | 🧠 generating prognosis...")
         analysis = await asyncio.to_thread(queue.agent.analyze_patient_prognosis, patient_data)
         await asyncio.to_thread(save_to_mongo, db, patient_data["patient_id"], analysis)
+        print(f"✅ /ws prognosis saved for {patient_id}: "
+              f"T{analysis.probability_tier.tier} — {analysis.provisional_diagnosis[:60]}")
 
         await websocket.send_json(analysis.model_dump() if hasattr(analysis, "model_dump") else analysis)
         await websocket.close()
     except WebSocketDisconnect:
-        # Client disconnected
+        print("⚠️  /ws: client disconnected before completion")
         return
     except Exception as e:
-        await websocket.send_json({"error": str(e)})
-        await websocket.close()
+        import traceback
+        print(f"❌ /ws prognosis error: {e}")
+        traceback.print_exc()
+        try:
+            await websocket.send_json({"error": str(e)})
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @app.websocket("/ws/triage")
