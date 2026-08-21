@@ -11,11 +11,12 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api.routes import patients, stats, performance, matrix, triage, clinical, change_stream, query_widgets, prognosis
+from api.routes import patients, stats, performance, matrix, triage, clinical, change_stream, query_widgets, prognosis, recommendation
 from api.websocket_manager import websocket_endpoint
 from api.queue_manager import PrognosisQueue
 from api.scheduler import setup_scheduler
 from LLM.prognosis.push_prognosis_to_mongo import save_to_mongo, build_patient_data_from_reports
+from api.routes.recommendation import build_recommendation_input, save_recommendation
 
 app = FastAPI(
     title="Clinical Dashboard API",
@@ -54,6 +55,7 @@ app.include_router(clinical.router, prefix="/api")
 app.include_router(change_stream.router, prefix="/api")
 app.include_router(query_widgets.router, prefix="/api")
 app.include_router(prognosis.router, prefix="/api")
+app.include_router(recommendation.router, prefix="/api")
 
 @app.get("/health")
 async def health_check():
@@ -203,6 +205,57 @@ async def websocket_manual_prognosis(websocket: WebSocket):
     except Exception as e:
         import traceback
         print(f"❌ /ws prognosis error: {e}")
+        traceback.print_exc()
+        try:
+            await websocket.send_json({"error": str(e)})
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@app.websocket("/ws/recommendation")
+async def websocket_recommendation(websocket: WebSocket):
+    """
+    Manual recommendation trigger over WebSocket.
+
+    Protocol:
+      1. Client connects to: ws://<host>:8013/ws/recommendation
+      2. Client sends JSON: {"patient_id": "<id>"}
+      3. Server generates recommendation, persists to `recommendation-data`, sends back result
+      4. Server closes the connection
+    """
+    await websocket.accept()
+    try:
+        msg = await websocket.receive_json()
+        patient_id = msg.get("patient_id")
+        if not patient_id:
+            await websocket.send_json({"error": "patient_id is required"})
+            await websocket.close()
+            return
+
+        from utils.mongo_connection import get_mongo_db
+        _, db = await asyncio.to_thread(get_mongo_db)
+
+        patient_data = await asyncio.to_thread(build_recommendation_input, db, patient_id)
+        if not patient_data:
+            await websocket.send_json({"error": f"No usable first-assessment report for patient {patient_id}"})
+            await websocket.close()
+            return
+
+        from LLM.recommendation.recommendation_agent import RecommendationAgent
+        agent = RecommendationAgent()
+        output = await asyncio.to_thread(agent.generate, patient_data)
+        await asyncio.to_thread(save_recommendation, db, patient_id, output)
+
+        await websocket.send_json({
+            "top_3_action_areas": output.top_3_action_areas,
+            "next_session_plan": output.next_session_plan,
+        })
+        await websocket.close()
+    except WebSocketDisconnect:
+        return
+    except Exception as e:
+        import traceback
         traceback.print_exc()
         try:
             await websocket.send_json({"error": str(e)})
