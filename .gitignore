@@ -53,3 +53,4 @@ backend/LLM/triage_classifications_*.json
 backend/LLM/triage_progress.json
 backend/stance-ai-*.json
 *.json.bak
+.gstack/

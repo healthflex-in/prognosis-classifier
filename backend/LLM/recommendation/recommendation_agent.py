@@ -47,72 +47,66 @@ You MUST respond with a single valid JSON object — no markdown, no prose, no c
 CORE RULES:
 - Use ONLY information supported by the assessment provided: chief complaint, clinical history, subjective notes, objective/VALD findings, functional limitations, and stated goals.
 - Do NOT invent diagnoses, findings, goals, treatment frequency, exercises, or treatment plans that are not reasonably supported by the assessment.
-- Do NOT use alarming language such as "severe weakness", "high risk", "damage", "abnormal", or "dysfunction" unless clinically essential. Prefer neutral, constructive language focused on what needs to improve.
+- Do NOT use alarming language such as "severe weakness", "high risk", "damage", "abnormal", or "dysfunction". Prefer neutral, constructive language focused on what needs to improve.
 - Write in the clinician's voice, speaking to the patient directly — reassuring, but never promising outcomes or guarantees.
 - Remove all unnecessary medical jargon. Diagnoses, special test names, and imaging findings must be translated into plain, functional, everyday language.
 - Simple English only. Assume no medical background.
 
+SPECIFICITY REQUIREMENT — THIS IS THE MOST IMPORTANT RULE:
+Every concern and the session plan MUST be specific to THIS patient's actual data. You must name the exact body part, movement, activity, or limitation that appears in the assessment. Generic phrases like "Improve strength and function", "Reduce pain and improve daily movement", or "Build tolerance to activity" are STRICTLY FORBIDDEN — they could apply to any patient and add zero value. If you catch yourself writing something that could apply to any random patient, rewrite it using the specific body part, sport, activity, limitation, or goal mentioned in THIS assessment.
+
 FIELD 1 — top_3_action_areas:
 - Return EXACTLY 3 items.
 - Each item must be approximately 4–10 words.
+- Each item MUST name the specific body region, movement pattern, or activity from this patient's assessment (e.g. "knee", "shoulder", "running", "sitting tolerance", "overhead reach", "stair descent", "throwing").
 - Phrase each as an action or improvement area — NEVER as a diagnosis, test result, or clinical label.
-  - Good: "Improve knee strength and control", "Restore comfortable shoulder mobility", "Build tolerance to running loads", "Reduce sensitivity during prolonged sitting", "Improve landing control and confidence"
-  - Bad: "ACL deficiency", "Glute med weakness", "Positive Hawkins-Kennedy", "Suspected tennis elbow", "MRI shows focal tear"
-- Do not simply name a body part alone — always pair the body part/area with the action or goal.
-- Prioritise the three areas most relevant to the patient's primary complaint and stated goals. These must be the genuinely highest-priority areas from the assessment — not the first three findings encountered, and not an exhaustive list of everything found.
-- Priority order should reflect: (1) relevance to primary complaint, (2) objective findings that materially affect function, (3) patient's stated goals.
-- Each of the 3 items must reflect a distinct idea. Do not restate the same concept twice in different words.
+  - Good: "Improve knee bend strength for stair climbing", "Restore pain-free shoulder movement overhead", "Build running distance without pain returning", "Reduce neck stiffness during desk work", "Improve hip control during single-leg activities"
+  - Bad (too generic — rejected): "Improve strength and function", "Reduce pain and improve daily movement", "Build tolerance to activity and exercise", "Improve overall mobility"
+- Do not simply name a body part alone — always pair it with the specific action, goal, or limitation.
+- Prioritise the three areas most relevant to this patient's primary complaint and stated goals. These must be the genuinely highest-priority areas from this specific assessment.
+- Priority order: (1) primary complaint and its functional impact, (2) objective findings that materially affect function, (3) patient's stated goals.
+- Each of the 3 items must reflect a distinct idea — do not restate the same concept in different words.
 
 FIELD 2 — next_session_plan:
 - Maximum 90 characters. 1–2 short sentences maximum. Be concise.
-- Describe what will actually happen, begin, or progress in the NEXT session — this is forward-looking, not a summary of the diagnosis.
-- Use patient-friendly terminology only.
-- Prioritise active treatment/rehab content where supported by the assessment (e.g. loading progression, mobility work, movement retraining, strengthening focus).
-- Do NOT invent specific named exercises, sets/reps, or treatment frequency unless explicitly documented or clearly planned in the assessment.
-- Do NOT repeat the Top 3 Immediate Action Areas word-for-word — this field should sound like a clinician previewing next steps, e.g.:
-  - "We will be focussing on knee mobility along with improving ankle proprioception."
-  - "In the next session, our focus will be to minimise pain and improve your shoulder mobility."
-  - "Next session we will work on running drills, calf strengthening and landing control."
+- Must reference something specific from this patient's assessment — the affected body area, a specific movement goal, or a treatment approach directly relevant to their complaint.
+- Describe what will actually happen next session — forward-looking, not a summary of findings.
+- Use patient-friendly language only.
+- Do NOT repeat the Top 3 concerns word-for-word. Sound like a clinician previewing next steps:
+  - "We will focus on releasing your neck stiffness and starting gentle strengthening."
+  - "Next session we will work on your knee's range of motion and begin loading exercises."
+  - "We will start hands-on treatment for your shoulder and gentle overhead mobility work."
 
-SELF-CHECK before returning output — verify all of the following:
-1. Every statement is traceable to something actually present in the assessment.
-2. A patient with no medical background would understand every word.
-3. The 3 action areas are genuinely the highest priorities relative to the patient's complaint and goals — not arbitrary or repetitive.
-4. The next-session plan describes what happens next, not a restatement of the diagnosis or the action areas.
-5. There is no unsupported certainty, guarantee, or promised outcome.
-6. All clinical jargon has been removed or translated into plain language.
-7. Both fields are short enough to fit comfortably on a visual summary card.
+SELF-CHECK before returning output:
+1. Could any of the 3 concerns apply to a different patient with a completely different complaint? If yes — rewrite.
+2. Does every item name something specific from THIS assessment (body part, activity, limitation)?
+3. Is all clinical jargon removed or translated?
+4. Does the next-session plan describe what actually happens next, not a diagnosis restatement?
+5. Are both fields short enough to fit on a small visual summary card?
 
-If the assessment lacks enough detail to confidently support a specific field, use the most conservative phrasing that is still specific to this patient rather than inventing detail. Never leave a field empty and never fabricate clinical specifics.
+If the assessment lacks enough detail, use the most conservative phrasing that is still specific to this patient. Never fabricate clinical specifics. Never leave a field empty.
 
 Respond with this exact JSON structure:
 {
   "top_3_action_areas": [
-    "string — 4-10 words, action-oriented, highest priority area",
-    "string — 4-10 words, action-oriented, second priority area",
-    "string — 4-10 words, action-oriented, third priority area"
+    "string — 4-10 words, specific to this patient's complaint/body area",
+    "string — 4-10 words, specific to this patient's findings/goals",
+    "string — 4-10 words, specific to this patient's functional limitation"
   ],
-  "next_session_plan": "string — max 90 characters, 1-2 sentences, patient-friendly, forward-looking"
+  "next_session_plan": "string — max 90 characters, specific to this patient, forward-looking"
 }"""
 
 
 def _build_user_prompt(patient_data: Dict[str, Any]) -> str:
     sd = patient_data.get("source_data", {})
-    ef = patient_data.get("extracted_fields", {})
 
     chief_complaint = sd.get("chief_complaint", "Not provided")
     clinical_history = sd.get("clinical_history", "Not provided")
     subjective_notes = sd.get("subjective_notes", "Not provided")
     existing_diagnosis = sd.get("provisional_diagnosis_raw", "Not provided")
     patient_goals = sd.get("patient_goals", "Not explicitly documented")
-
     objective_notes = sd.get("objective_notes", "")
     existing_recommendations = sd.get("existing_recommendations", "")
-
-    duration_months = ef.get("duration_months", "Unknown")
-    clinical_stage = ef.get("clinical_stage", {}).get("stage", "unknown")
-    primary_joint = ef.get("joint_mapping", {}).get("primary_joint", "Unknown")
-    functional_region = ef.get("joint_mapping", {}).get("functional_region", "unknown")
 
     strength_asym = patient_data.get("strength_asymmetry_percent")
     rom_asym = patient_data.get("rom_asymmetry_degrees")
@@ -128,31 +122,41 @@ def _build_user_prompt(patient_data: Dict[str, Any]) -> str:
     vald_section = "\n".join(vald_lines) if vald_lines else "- No VALD data available"
 
     parts = [
-        "Read the completed first-assessment report below and pre-fill the two customer-facing retention fields for the treating clinician to review.",
+        "Generate the two patient-facing retention fields for this first-assessment report.",
+        "The concerns and session plan MUST be specific to the body area, activities, and limitations described below — not generic.",
         "",
-        "CLINICAL FINDINGS:",
-        f"- Chief Complaint: {chief_complaint}",
-        f"- Clinical History: {clinical_history}",
-        f"- Duration: {duration_months} months (Stage: {clinical_stage})",
-        f"- Primary Joint: {primary_joint}",
-        f"- Functional Region: {functional_region}",
-        f"- Subjective Notes: {subjective_notes}",
+        "── PRIMARY COMPLAINT ──",
+        f"Chief Complaint: {chief_complaint}",
+        f"Provisional Diagnosis (internal only): {existing_diagnosis}",
+        "",
+        "── PATIENT HISTORY & SUBJECTIVE ──",
+        f"Clinical History: {clinical_history}",
+        f"Subjective Notes: {subjective_notes}",
+        f"Patient Goals: {patient_goals}",
     ]
 
     if objective_notes:
-        parts += ["", "OBJECTIVE FINDINGS:", objective_notes]
+        parts += [
+            "",
+            "── OBJECTIVE FINDINGS ──",
+            objective_notes,
+        ]
+
+    if vald_section != "- No VALD data available":
+        parts += [
+            "",
+            "── VALD BIOMECHANICAL DATA ──",
+            vald_section,
+        ]
 
     if existing_recommendations:
-        parts += ["", "EXISTING RECOMMENDATIONS (session plan):", existing_recommendations]
+        parts += [
+            "",
+            "── CLINICIAN'S EXISTING SESSION PLAN ──",
+            existing_recommendations,
+        ]
 
     parts += [
-        "",
-        "VALD BIOMECHANICAL DATA:",
-        vald_section,
-        "",
-        f"PROVISIONAL DIAGNOSIS (for internal reasoning only — do not surface directly to patient): {existing_diagnosis}",
-        "",
-        f"PATIENT GOALS (if documented): {patient_goals}",
         "",
         "Return ONLY the JSON object. No markdown, no explanation outside the JSON.",
     ]
@@ -175,7 +179,7 @@ class RecommendationAgent:
             project=os.getenv("GOOGLE_CLOUD_PROJECT", "stance-ai"),
             location="us-central1",
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=8192,
         )
 
     def generate(self, patient_data: Dict[str, Any]) -> RecommendationOutput:
@@ -190,7 +194,6 @@ class RecommendationAgent:
             raw = response.content.strip()
             data = json.loads(_clean_json(raw))
             areas = data.get("top_3_action_areas", [])
-            # Ensure exactly 3 items
             if len(areas) < 3:
                 areas += ["Continue with your rehabilitation programme"] * (3 - len(areas))
             return RecommendationOutput(
@@ -198,21 +201,17 @@ class RecommendationAgent:
                 next_session_plan=(data.get("next_session_plan") or "")[:90],
             )
         except Exception as e:
+            import traceback
             print(f"⚠️  RecommendationAgent LLM failed: {e}")
+            traceback.print_exc()
             return self._fallback(patient_data)
 
     def _fallback(self, patient_data: Dict[str, Any]) -> RecommendationOutput:
-        complaint = patient_data.get("source_data", {}).get("chief_complaint", "your condition")
-        joint = (
-            patient_data.get("extracted_fields", {})
-            .get("joint_mapping", {})
-            .get("primary_joint", "affected area")
-        )
         return RecommendationOutput(
             top_3_action_areas=[
-                f"Improve {joint} strength and function",
-                "Reduce pain and improve daily movement",
-                "Build tolerance to activity and exercise",
+                "Reduce pain and restore comfortable movement",
+                "Improve strength and physical function",
+                "Build tolerance to activity and daily tasks",
             ],
-            next_session_plan=f"Next session we will begin targeted rehabilitation for {complaint}."[:90],
+            next_session_plan="We will begin hands-on treatment and targeted exercises in your next session.",
         )

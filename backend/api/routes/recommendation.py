@@ -175,22 +175,26 @@ def build_recommendation_input(db, patient_id: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def save_recommendation(db, patient_id: str, output) -> None:
+def save_recommendation(db, patient_id: str, output, input_hash: Optional[str] = None) -> None:
     col = db["recommendation-data"]
     try:
         pid = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
     except Exception:
         pid = patient_id
 
+    set_doc: Dict[str, Any] = {
+        "patient_id": pid,
+        "top_3_action_areas": output.top_3_action_areas,
+        "next_session_plan": output.next_session_plan,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if input_hash is not None:
+        set_doc["input_hash"] = input_hash
+
     col.update_one(
         {"patient_id": pid},
         {
-            "$set": {
-                "patient_id": pid,
-                "top_3_action_areas": output.top_3_action_areas,
-                "next_session_plan": output.next_session_plan,
-                "updated_at": datetime.now(timezone.utc),
-            },
+            "$set": set_doc,
             "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
         },
         upsert=True,
@@ -226,6 +230,43 @@ async def get_recommendation(patient_id: str) -> RecommendationResponse:
         top_3_action_areas=doc.get("top_3_action_areas", []),
         next_session_plan=doc.get("next_session_plan", ""),
         generated_at=generated_at,
+    )
+
+
+class RecommendationPatch(BaseModel):
+    top_3_action_areas: Optional[List[str]] = None
+    next_session_plan: Optional[str] = None
+
+
+@router.patch("/{patient_id}", response_model=RecommendationResponse)
+async def patch_recommendation(patient_id: str, body: RecommendationPatch) -> RecommendationResponse:
+    """Update stored recommendation fields (clinician edits)."""
+    db = _get_db()
+    col = db["recommendation-data"]
+
+    try:
+        pid = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
+    except Exception:
+        pid = patient_id
+
+    updates: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+    if body.top_3_action_areas is not None:
+        updates["top_3_action_areas"] = body.top_3_action_areas
+    if body.next_session_plan is not None:
+        updates["next_session_plan"] = body.next_session_plan
+
+    result = col.update_one(
+        {"patient_id": pid},
+        {"$set": updates, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+
+    doc = col.find_one({"patient_id": pid})
+    return RecommendationResponse(
+        patient_id=patient_id,
+        top_3_action_areas=doc.get("top_3_action_areas", []),
+        next_session_plan=doc.get("next_session_plan", ""),
+        generated_at=updates["updated_at"].isoformat(),
     )
 
 

@@ -11,7 +11,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api.routes import patients, stats, performance, matrix, triage, clinical, change_stream, query_widgets, prognosis, recommendation
+from api.routes import patients, stats, performance, matrix, triage, clinical, change_stream, query_widgets, prognosis, recommendation, partial_reports
 from api.websocket_manager import websocket_endpoint
 from api.queue_manager import PrognosisQueue
 from api.scheduler import setup_scheduler
@@ -56,6 +56,7 @@ app.include_router(change_stream.router, prefix="/api")
 app.include_router(query_widgets.router, prefix="/api")
 app.include_router(prognosis.router, prefix="/api")
 app.include_router(recommendation.router, prefix="/api")
+app.include_router(partial_reports.router, prefix="/api")
 
 @app.get("/health")
 async def health_check():
@@ -216,13 +217,15 @@ async def websocket_manual_prognosis(websocket: WebSocket):
 @app.websocket("/ws/recommendation")
 async def websocket_recommendation(websocket: WebSocket):
     """
-    Manual recommendation trigger over WebSocket.
+    Recommendation trigger over WebSocket with hash-based cache.
 
     Protocol:
-      1. Client connects to: ws://<host>:8013/ws/recommendation
-      2. Client sends JSON: {"patient_id": "<id>"}
-      3. Server generates recommendation, persists to `recommendation-data`, sends back result
-      4. Server closes the connection
+      1. Client connects, sends JSON: {"patient_id": "<id>"}
+      2. Server checks if partial-reports hash matches last generated hash
+         → if unchanged: returns cached result immediately (no LLM call)
+         → if changed:   builds patient data, merges partial-report fields,
+                         runs LLM, saves with new hash, returns result
+      3. Server closes the connection
     """
     await websocket.accept()
     try:
@@ -234,22 +237,61 @@ async def websocket_recommendation(websocket: WebSocket):
             return
 
         from utils.mongo_connection import get_mongo_db
+        from bson import ObjectId
         _, db = await asyncio.to_thread(get_mongo_db)
 
+        try:
+            pid_obj = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
+        except Exception:
+            pid_obj = patient_id
+
+        # ── 1. Load partial-report (written by frontend just before connecting) ─
+        partial = await asyncio.to_thread(
+            lambda: db["partial-reports"].find_one({"patient_id": pid_obj})
+        )
+        current_hash = partial.get("hash") if partial else None
+
+        # ── 2. Hash check — skip LLM if nothing changed ───────────────────────
+        rec_doc = await asyncio.to_thread(
+            lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
+        )
+        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash:
+            print(f"⚡ /ws/recommendation: hash unchanged for {patient_id}, returning cache")
+            await websocket.send_json({
+                "top_3_action_areas": rec_doc["top_3_action_areas"],
+                "next_session_plan":  rec_doc["next_session_plan"],
+                "cached": True,
+            })
+            await websocket.close()
+            return
+
+        # ── 3. Build patient data from DB report ─────────────────────────────
         patient_data = await asyncio.to_thread(build_recommendation_input, db, patient_id)
         if not patient_data:
             await websocket.send_json({"error": f"No usable first-assessment report for patient {patient_id}"})
             await websocket.close()
             return
 
+        # ── 4. Override with freshest form fields from partial-report ─────────
+        if partial and partial.get("fields"):
+            pf = partial["fields"]
+            sd = patient_data.setdefault("source_data", {})
+            if pf.get("chief_complaint"):       sd["chief_complaint"]          = pf["chief_complaint"]
+            if pf.get("client_history"):        sd["clinical_history"]         = pf["client_history"]
+            if pf.get("subjective_assessment"): sd["subjective_notes"]         = pf["subjective_assessment"]
+            if pf.get("provisional_diagnosis"): sd["provisional_diagnosis_raw"] = pf["provisional_diagnosis"]
+
+        # ── 5. Generate and persist with new hash ────────────────────────────
         from LLM.recommendation.recommendation_agent import RecommendationAgent
         agent = RecommendationAgent()
         output = await asyncio.to_thread(agent.generate, patient_data)
-        await asyncio.to_thread(save_recommendation, db, patient_id, output)
+        await asyncio.to_thread(save_recommendation, db, patient_id, output, current_hash)
 
+        print(f"✅ /ws/recommendation: generated for {patient_id} (hash={current_hash[:8] if current_hash else 'none'})")
         await websocket.send_json({
             "top_3_action_areas": output.top_3_action_areas,
-            "next_session_plan": output.next_session_plan,
+            "next_session_plan":  output.next_session_plan,
+            "cached": False,
         })
         await websocket.close()
     except WebSocketDisconnect:

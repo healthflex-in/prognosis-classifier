@@ -1,0 +1,10 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file: ./backend/.env
+    ports:
+      - "8013:8013"
+    restart: unless-stopped
+    volumes:
+      - ./backend/stance-ai-8919b7295fb6.json:/app/stance-ai-8919b7295fb6.json:ro
