@@ -1,10 +1,84 @@
 services:
-  backend:
+  # ─── DEV (ports 8013/8014, dev MongoDB) ───────────────────────────────────
+  backend-dev:
     build:
       context: ./backend
-    env_file: ./backend/.env
+    env_file: ./backend/.env.dev
+    container_name: prognosis-backend-dev
     ports:
       - "8013:8013"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     restart: unless-stopped
     volumes:
       - ./backend/stance-ai-8919b7295fb6.json:/app/stance-ai-8919b7295fb6.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8013/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  recommendation-dev:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.dev
+    container_name: recommendation-service-dev
+    ports:
+      - "8014:8014"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    volumes:
+      - ./backend/stance-ai-8919b7295fb6.json:/app/stance-ai-8919b7295fb6.json:ro
+    command: uvicorn api.recommendation_main:app --host 0.0.0.0 --port 8014
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8014/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # ─── PROD (ports 8015/8016, prod MongoDB) ─────────────────────────────────
+  backend-prod:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.prod
+    container_name: prognosis-backend-prod
+    ports:
+      - "8015:8013"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    volumes:
+      - ./backend/stance-ai-8919b7295fb6.json:/app/stance-ai-8919b7295fb6.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8013/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  recommendation-prod:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.prod
+    container_name: recommendation-service-prod
+    ports:
+      - "8016:8014"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    volumes:
+      - ./backend/stance-ai-8919b7295fb6.json:/app/stance-ai-8919b7295fb6.json:ro
+    command: uvicorn api.recommendation_main:app --host 0.0.0.0 --port 8014
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8014/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
