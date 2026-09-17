@@ -30,56 +30,27 @@ def run_triage_agent(months_back: int = 5, limit: Optional[int] = None, patient_
     Background task to run the triage agent.
     """
     try:
-        from LLM.triage_agent import TriageAgent
+        from LLM.classification.triage_agent import TriageAgent
         from api.progress_tracker import set_progress, reset_progress
-        from pathlib import Path
-        from datetime import datetime
-        import json
-        
+
         # Reset progress before starting
         reset_progress()
-        
-        # Create output file path for incremental saving
-        output_dir = Path(__file__).parent.parent.parent / "LLM"
-        output_file = output_dir / f"triage_classifications_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        
-        # Store output file path in progress for real-time reading
-        from api.progress_tracker import set_progress as set_progress_with_file
-        set_progress_with_file("running", 0, 0, message="Starting triage...", output_file=str(output_file))
+        set_progress("running", 0, 0, message="Starting triage...")
         
         agent = TriageAgent()
         
-        # Run with progress tracking enabled and incremental file saving
+        # Run with progress tracking enabled (classifications are written directly to MongoDB)
         if patient_ids:
             classifications = agent.run_triage_pipeline(
                 patient_ids=patient_ids, 
                 update_progress=True,
-                output_file=output_file
             )
         else:
             classifications = agent.run_triage_pipeline(
                 months_back=months_back, 
                 limit=limit, 
                 update_progress=True,
-                output_file=output_file
             )
-        
-        # Final save is already done incrementally, but verify file exists
-        if classifications:
-            if output_file.exists():
-                print(f"\n💾 Final classifications file: {output_file}")
-            else:
-                # Fallback: save if file doesn't exist (shouldn't happen with incremental saves)
-                with open(output_file, 'w') as f:
-                    json.dump(
-                        [cls.model_dump(exclude_none=False, mode='json') for cls in classifications],
-                        f,
-                        indent=2,
-                        default=str
-                    )
-                print(f"\n💾 Classifications saved to: {output_file}")
-        else:
-            print(f"\n⚠️  No classifications to save. All patients failed or no eligible patients found.")
         
         return {
             "status": "success",
@@ -159,27 +130,21 @@ async def get_triage_status():
     Get the status of the latest triage classification file.
     """
     try:
-        from api.data_loader import find_latest_classification_file
-        
-        latest_file = find_latest_classification_file()
-        
-        if latest_file:
-            import os
-            from datetime import datetime
-            
-            file_stat = os.stat(latest_file)
-            modified_time = datetime.fromtimestamp(file_stat.st_mtime)
-            
+        # Status now reflects Mongo-backed classifications instead of JSON files
+        from api.data_loader import load_classifications
+
+        records = load_classifications()
+
+        if records:
             return {
                 "status": "ready",
-                "latest_file": str(latest_file),
-                "modified_time": modified_time.isoformat(),
-                "file_size": file_stat.st_size
+                "source": "mongo:classification",
+                "record_count": len(records),
             }
         else:
             return {
                 "status": "no_data",
-                "message": "No classification files found"
+                "message": "No classification records found in MongoDB 'classification' collection",
             }
     except Exception as e:
         raise HTTPException(
