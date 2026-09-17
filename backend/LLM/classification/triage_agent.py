@@ -12,6 +12,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
+from pymongo import MongoClient
+
 # Pydantic for validation
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,12 +27,12 @@ except ImportError:
 
 # Load environment
 from dotenv import load_dotenv
-env_path = Path(__file__).parent.parent / ".env"
+env_path = Path(__file__).parent.parent.parent / ".env"  # classification -> LLM -> backend
 load_dotenv(env_path)
 
 # Import filter
 import sys
-backend_dir = Path(__file__).parent.parent
+backend_dir = Path(__file__).parent.parent.parent  # classification -> LLM -> backend
 sys.path.insert(0, str(backend_dir))
 
 import importlib.util
@@ -992,14 +994,37 @@ Provide classification in this EXACT JSON structure:
         
         # Parse JSON from response
         try:
-            # Extract JSON from response
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}') + 1
+            # Clean up common formatting the model may add (code fences, language hints)
+            cleaned_response = response_text.strip()
+
+            if "```" in cleaned_response:
+                parts = cleaned_response.split("```")
+                # Take the first fenced block content if present
+                if len(parts) >= 3:
+                    candidate = parts[1]
+                    candidate_lines = candidate.splitlines()
+                    # Drop optional language tag like ```json or ```python
+                    if candidate_lines and candidate_lines[0].strip().lower() in ("json", "python"):
+                        candidate = "\n".join(candidate_lines[1:])
+                    cleaned_response = candidate.strip()
+
+            # Try to isolate the JSON object
+            json_start = cleaned_response.find("{")
+            json_end = cleaned_response.rfind("}") + 1
             if json_start >= 0 and json_end > json_start:
-                json_str = response_text[json_start:json_end]
-                classification_dict = json.loads(json_str)
+                json_str = cleaned_response[json_start:json_end]
             else:
-                classification_dict = json.loads(response_text)
+                json_str = cleaned_response
+
+            try:
+                classification_dict = json.loads(json_str)
+            except json.JSONDecodeError as esc_err:
+                # Handle common "Invalid \escape" issues by escaping lone backslashes
+                if "Invalid \\escape" in str(esc_err):
+                    safe_str = json_str.replace("\\", "\\\\")
+                    classification_dict = json.loads(safe_str)
+                else:
+                    raise
             
             # Ensure patient_id and patient_name are set
             classification_dict['patient_id'] = patient_id
@@ -1025,6 +1050,41 @@ Provide classification in this EXACT JSON structure:
             if 'extracted_fields' not in classification_dict:
                 raise ValueError("Missing 'extracted_fields' in LLM response")
             extracted = classification_dict['extracted_fields']
+            
+            # ------------------------------------------------------------------
+            # Normalize list fields that the LLM may return as null instead of []
+            # to satisfy Pydantic's List[...] requirements.
+            # ------------------------------------------------------------------
+            def ensure_list(container: dict, key: str):
+                """Ensure container[key] is a list; convert None/missing to [] and scalar to [scalar]."""
+                if key not in container or container[key] is None:
+                    container[key] = []
+                elif not isinstance(container[key], list):
+                    container[key] = [container[key]]
+
+            # provisional_diagnosis.raw_matches
+            if 'provisional_diagnosis' in extracted and isinstance(extracted['provisional_diagnosis'], dict):
+                ensure_list(extracted['provisional_diagnosis'], 'raw_matches')
+
+            # clinical_stage.evidence
+            if 'clinical_stage' in extracted and isinstance(extracted['clinical_stage'], dict):
+                ensure_list(extracted['clinical_stage'], 'evidence')
+
+            # activity_profile.evidence
+            if 'activity_profile' in extracted and isinstance(extracted['activity_profile'], dict):
+                ensure_list(extracted['activity_profile'], 'evidence')
+
+            # occupation.evidence  <-- this is the one causing your error
+            if 'occupation' in extracted and isinstance(extracted['occupation'], dict):
+                ensure_list(extracted['occupation'], 'evidence')
+
+            # pain_interference.domains_affected
+            if 'pain_interference' in extracted and isinstance(extracted['pain_interference'], dict):
+                ensure_list(extracted['pain_interference'], 'domains_affected')
+
+            # intent.evidence
+            if 'intent' in extracted and isinstance(extracted['intent'], dict):
+                ensure_list(extracted['intent'], 'evidence')
             
             # Normalize primary_joint if present
             if 'joint_mapping' in extracted and extracted['joint_mapping'].get('primary_joint'):
@@ -1057,6 +1117,11 @@ Provide classification in this EXACT JSON structure:
                     if not nprs.get('extraction_method'):
                         nprs['extraction_method'] = None
                     print(f"   📊 NPRS not available (no numeric score found)")
+                
+                # Ensure scale is always a valid string for Pydantic (default to "NPRS")
+                scale = nprs.get('scale')
+                if not isinstance(scale, str) or not scale.strip():
+                    nprs['scale'] = "NPRS"
             
             # Ensure data_quality_flags exists and is populated
             if 'data_quality_flags' not in classification_dict:
@@ -1148,7 +1213,7 @@ Provide classification in this EXACT JSON structure:
         filtered_patients: List[Dict[str, Any]],
         update_progress: bool = False,
         max_workers: int = 10,
-        output_file: Optional[Path] = None
+        output_file: Optional[Path] = None  # kept for backward compat, no longer used for JSON
     ) -> List[TriageClassification]:
         """
         Classify multiple filtered patients concurrently.
@@ -1162,7 +1227,7 @@ Provide classification in this EXACT JSON structure:
         Returns:
             List of TriageClassification objects
         """
-        classifications = []
+        classifications: List[TriageClassification] = []
         total_patients = len(filtered_patients)
         
         print(f"📊 Classifying {total_patients} patients concurrently (max {max_workers} at a time)...")
@@ -1182,31 +1247,194 @@ Provide classification in this EXACT JSON structure:
         completed_lock = threading.Lock()
         completed_count = [0]  # Use list to allow modification in nested function
         
-        # Thread-safe file writing lock for incremental saves
-        file_write_lock = threading.Lock()
+        # ------------------------------------------------------------------
+        # MongoDB setup for persisting classifications
+        # ------------------------------------------------------------------
+        mongo_client = None
+        mongo_collection = None
+        try:
+            mongo_uri = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or "mongodb://localhost:27017/"
+            db_name = os.getenv("MONGO_DB", "stance-dashboard")
+            mongo_client = MongoClient(
+                mongo_uri,
+                tlsAllowInvalidCertificates=True,
+                tlsAllowInvalidHostnames=True,
+                serverSelectionTimeoutMS=30000,  # 30 seconds to find a server
+                connectTimeoutMS=30000,  # 30 seconds to connect
+                socketTimeoutMS=60000,  # 60 seconds for socket operations
+                retryWrites=True,
+                retryReads=True,
+                maxPoolSize=50,
+                minPoolSize=10,
+            )
+            mongo_db = mongo_client[db_name]
+            mongo_collection = mongo_db["classification"]
+            print(f"✅ Connected to MongoDB for classifications: db={db_name}, collection=classification")
+        except Exception as e:
+            print(f"⚠️  Could not connect to MongoDB for classifications, will skip DB writes: {e}")
+            mongo_client = None
+            mongo_collection = None
+
+        # ------------------------------------------------------------------
+        # Initialize skeleton classification documents for all filtered patients
+        # so the dashboard can see "pending" patients immediately in Mongo.
+        # ------------------------------------------------------------------
+        if mongo_collection is not None and filtered_patients:
+            try:
+                from pymongo import UpdateOne
+                now = datetime.utcnow()
+                ops = []
+
+                for patient in filtered_patients:
+                    patient_id = patient.get("patient_id")
+                    if not patient_id:
+                        continue
+
+                    # Convert patient_id to ObjectId
+                    from bson import ObjectId
+                    try:
+                        if isinstance(patient_id, str) and len(patient_id) == 24:
+                            patient_id_obj = ObjectId(patient_id)
+                        elif isinstance(patient_id, ObjectId):
+                            patient_id_obj = patient_id
+                        else:
+                            patient_id_obj = ObjectId(patient_id)
+                        patient_id_for_query = patient_id_obj
+                    except (ValueError, TypeError):
+                        print(f"⚠️  Warning: patient_id '{patient_id}' is not a valid ObjectId, using as string")
+                        patient_id_for_query = patient_id
+                        patient_id_obj = patient_id
+
+                    patient_name = patient.get("patient_name") or str(patient_id)
+                    provisional_diag = patient.get("diagnosis", "") or ""
+
+                    base_doc = {
+                        "patient_id": patient_id_obj,  # Store as ObjectId
+                        "patient_name": patient_name,
+                        "status": "pending",
+                        "provisional_diagnosis": provisional_diag,
+                        "canonical_diagnosis": "Unclear",
+                        "updated_at": now,
+                    }
+
+                    ops.append(
+                        UpdateOne(
+                            {"patient_id": patient_id_for_query},
+                            {
+                                # Only create skeleton on first insert; full classifications
+                                # written later will overwrite these fields via $set.
+                                "$setOnInsert": {**base_doc, "created_at": now},
+                            },
+                            upsert=True,
+                        )
+                    )
+
+                if ops:
+                    mongo_collection.bulk_write(ops, ordered=False)
+                    print(f"💾 Initialized {len(ops)} skeleton classification documents in MongoDB")
+            except Exception as e:
+                print(f"⚠️  Could not initialize skeleton classification documents in MongoDB: {e}")
+
+        # Track which patients have been saved to avoid re-saving
+        saved_patient_ids: set = set()
+        save_lock = threading.Lock()
         
-        def save_classifications_incremental(classifications_list: List[TriageClassification], force: bool = False):
-            """Thread-safe function to save classifications incrementally."""
-            if not output_file:
-                return
-            
-            with file_write_lock:
-                try:
-                    # Convert to JSON-serializable format
-                    json_data = [cls.model_dump(exclude_none=False, mode='json') for cls in classifications_list]
-                    
-                    # Ensure directory exists
-                    output_file.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # Write to file
-                    with open(output_file, 'w') as f:
-                        json.dump(json_data, f, indent=2, default=str)
-                    
-                    # Always print when saving (for real-time updates)
-                    if force:
-                        print(f"💾 Saved {len(classifications_list)} classifications to {output_file.name}")
-                except Exception as e:
-                    print(f"⚠️  Error saving classifications incrementally: {e}")
+        def save_classifications_incremental(classifications_list: List[TriageClassification], force: bool = False, batch_size: int = 10):
+            """
+            Thread-safe function to save classifications incrementally.
+
+            - Upserts into MongoDB `classification` collection (source of truth).
+            - Only saves new/unsaved classifications to avoid duplicate writes.
+            - Batches saves for better performance.
+            """
+            with save_lock:
+                # Filter to only new classifications that haven't been saved
+                new_classifications = [
+                    cls for cls in classifications_list 
+                    if cls.patient_id not in saved_patient_ids
+                ]
+                
+                if not new_classifications:
+                    return  # Nothing new to save
+                
+                # Convert to plain dictionaries once
+                json_data = [cls.model_dump(exclude_none=False, mode='json') for cls in new_classifications]
+
+                # ------------------------------------------------------------------
+                # Ensure top-level canonical_diagnosis is kept in sync with the
+                # nested extracted_fields.provisional_diagnosis.canonical_label.
+                # This makes it easy to query in Mongo and keeps your important
+                # field up-to-date.
+                # ------------------------------------------------------------------
+                for doc in json_data:
+                    try:
+                        extracted = doc.get("extracted_fields") or {}
+                        prov = extracted.get("provisional_diagnosis") or {}
+                        canonical = prov.get("canonical_label")
+                        if canonical and isinstance(canonical, str) and canonical.strip():
+                            doc["canonical_diagnosis"] = canonical.strip()
+                    except Exception:
+                        # Don't let this block persistence if anything is odd
+                        pass
+
+                # 1) Persist to MongoDB (source of truth)
+                if mongo_collection is not None:
+                    try:
+                        # Upsert each classification by patient_id
+                        now = datetime.utcnow()
+                        bulk_ops = []
+                        from pymongo import UpdateOne  # local import to avoid issues if pymongo isn't available at import time
+
+                        for doc in json_data:
+                            patient_id = doc.get("patient_id")
+                            if not patient_id:
+                                continue
+                            
+                            # Convert patient_id to ObjectId if it's a valid ObjectId string
+                            from bson import ObjectId
+                            try:
+                                # Try to convert to ObjectId if it looks like one (24 hex chars)
+                                if isinstance(patient_id, str) and len(patient_id) == 24:
+                                    patient_id_obj = ObjectId(patient_id)
+                                elif isinstance(patient_id, ObjectId):
+                                    patient_id_obj = patient_id
+                                else:
+                                    # If not a valid ObjectId format, try to convert anyway
+                                    patient_id_obj = ObjectId(patient_id)
+                                
+                                # Store as ObjectId in document
+                                doc["patient_id"] = patient_id_obj
+                                patient_id_for_query = patient_id_obj
+                            except (ValueError, TypeError):
+                                # If conversion fails, keep as string but log warning
+                                print(f"⚠️  Warning: patient_id '{patient_id}' is not a valid ObjectId, storing as string")
+                                patient_id_for_query = patient_id
+                            
+                            # Mark as completed classification
+                            doc["status"] = "completed"
+                            doc["updated_at"] = now
+                            # created_at only set on first insert
+                            bulk_ops.append(
+                                UpdateOne(
+                                    {"patient_id": patient_id_for_query},
+                                    {"$set": doc, "$setOnInsert": {"created_at": now}},
+                                    upsert=True,
+                                )
+                            )
+
+                        if bulk_ops:
+                            # Only save if we have enough new items OR if forced
+                            if len(bulk_ops) >= batch_size or force:
+                                mongo_collection.bulk_write(bulk_ops, ordered=False)
+                                # Mark these as saved
+                                for cls in new_classifications:
+                                    saved_patient_ids.add(cls.patient_id)
+                                
+                                if force or len(bulk_ops) >= batch_size:
+                                    print(f"💾 Upserted {len(bulk_ops)} new classifications into MongoDB (total saved: {len(saved_patient_ids)})")
+                    except Exception as e:
+                        print(f"⚠️  Error saving classifications to MongoDB: {e}")
+
         
         def classify_single_patient(patient: Dict[str, Any], index: int) -> Optional[TriageClassification]:
             """Classify a single patient and update progress."""
@@ -1280,7 +1508,7 @@ Provide classification in this EXACT JSON structure:
                     executor.submit(classify_single_patient, patient, i): (patient, i)
                     for i, patient in enumerate(filtered_patients)
                 }
-                
+
                 # Collect results as they complete
                 for future in as_completed(future_to_patient):
                     patient, index = future_to_patient[future]
@@ -1288,10 +1516,10 @@ Provide classification in this EXACT JSON structure:
                         result = future.result()
                         if result is not None:
                             classifications.append(result)
-                            
-                            # Save incrementally after EVERY patient for real-time updates
-                            if output_file:
-                                save_classifications_incremental(classifications, force=True)
+
+                            # Save incrementally in batches (every 10 patients or on force)
+                            # This avoids re-saving all classifications every time
+                            save_classifications_incremental(classifications, force=False, batch_size=10)
                     except PermissionError:
                         # Re-raise permission errors to stop the pipeline
                         raise
@@ -1308,11 +1536,18 @@ Provide classification in this EXACT JSON structure:
                 except Exception:
                     pass
             raise
-        
-        # Final save if output file is specified
-        if output_file and classifications:
-            save_classifications_incremental(classifications, force=True)
-            print(f"\n💾 Final save: {len(classifications)} classifications saved to {output_file.name}")
+        finally:
+            # Save any remaining classifications that haven't been saved yet
+            if classifications:
+                save_classifications_incremental(classifications, force=True, batch_size=1)
+            
+            # Clean up Mongo client if we created one
+            if mongo_client is not None:
+                try:
+                    mongo_client.close()
+                    print("✅ MongoDB classification client closed")
+                except Exception:
+                    pass
         
         # Mark as completed
         if update_progress:
@@ -1323,6 +1558,7 @@ Provide classification in this EXACT JSON structure:
                 pass
         
         print(f"\n✅ Completed classification of {len(classifications)}/{total_patients} patients")
+        print(f"💾 Total classifications saved to MongoDB: {len(saved_patient_ids)}")
         return classifications
     
     def run_triage_pipeline(
