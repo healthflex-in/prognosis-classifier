@@ -48,10 +48,19 @@ async def get_patients(
     
     # Apply filters
     if canonical_diagnosis:
-        patients = [p for p in patients if p.canonicalDiagnosis == canonical_diagnosis]
+        # Handle multiple diagnoses separated by comma (OR logic)
+        if ',' in canonical_diagnosis:
+            diagnosis_list = [d.strip().lower() for d in canonical_diagnosis.split(',')]
+            patients = [p for p in patients if p.canonicalDiagnosis and 
+                       any(diag in p.canonicalDiagnosis.lower() for diag in diagnosis_list)]
+        else:
+            # Single diagnosis - use substring matching
+            patients = [p for p in patients if p.canonicalDiagnosis and 
+                       canonical_diagnosis.lower() in p.canonicalDiagnosis.lower()]
     
     if primary_joint:
-        patients = [p for p in patients if p.primaryJoint == primary_joint]
+        joint_lower = primary_joint.lower()
+        patients = [p for p in patients if p.primaryJoint and joint_lower in p.primaryJoint.lower()]
     
     if functional_region:
         patients = [p for p in patients if p.functionalRegion == functional_region]

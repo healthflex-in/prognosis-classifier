@@ -17,14 +17,54 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/diagnosis", response_model=List[CountStats])
-async def get_diagnosis_stats():
+async def get_diagnosis_stats(
+    clinical_stage: Optional[str] = Query(None, description="Filter by clinical stage (e.g., 'Subacute' or 'Subacute,Acute' for multiple)"),
+    primary_joint: Optional[str] = Query(None, description="Filter by primary joint"),
+    functional_region: Optional[str] = Query(None, description="Filter by functional region"),
+    canonical_diagnosis: Optional[str] = Query(None, description="Filter by specific diagnoses (comma-separated)")
+):
     """
-    Get diagnosis distribution statistics (Step 1).
+    Get diagnosis distribution statistics (Step 1) with optional filtering.
+    
+    Args:
+        clinical_stage: Filter by clinical stage (e.g., "Subacute")
+        primary_joint: Filter by primary joint (e.g., "shoulder")
+        functional_region: Filter by functional region (e.g., "Upper limb")
+        canonical_diagnosis: Filter by specific diagnoses (e.g., "knee pain,shoulder pain")
     
     Returns:
-        List of diagnosis counts with percentages
+        List of diagnosis counts with percentages (filtered if specified)
     """
     patients = get_all_patients_master_view()
+    
+    # Apply clinical stage filter if provided
+    if clinical_stage:
+        if ',' in clinical_stage:
+            stage_list = [s.strip() for s in clinical_stage.split(',')]
+            patients = [p for p in patients if p.clinicalStage and p.clinicalStage.value in stage_list]
+        else:
+            patients = [p for p in patients if p.clinicalStage and p.clinicalStage.value == clinical_stage]
+    
+    # Apply joint filter if provided
+    if primary_joint:
+        joint_lower = primary_joint.lower()
+        patients = [p for p in patients if p.primaryJoint and joint_lower in p.primaryJoint.lower()]
+    
+    # Apply functional region filter if provided
+    if functional_region:
+        patients = [p for p in patients if p.functionalRegion and p.functionalRegion.value == functional_region]
+    
+    # Apply diagnosis filter if provided (filter to only specified diagnoses)
+    if canonical_diagnosis:
+        if ',' in canonical_diagnosis:
+            diagnosis_list = [d.strip().lower() for d in canonical_diagnosis.split(',')]
+            patients = [p for p in patients if p.canonicalDiagnosis and 
+                       any(diag in p.canonicalDiagnosis.lower() for diag in diagnosis_list)]
+        else:
+            diag_lower = canonical_diagnosis.lower()
+            patients = [p for p in patients if p.canonicalDiagnosis and 
+                       diag_lower in p.canonicalDiagnosis.lower()]
+    
     total = len(patients)
     
     if total == 0:
@@ -179,14 +219,45 @@ async def get_activity_recreational_stats():
 
 
 @router.get("/clinical-stage", response_model=List[CountStats])
-async def get_clinical_stage_stats():
+async def get_clinical_stage_stats(
+    filter_stages: Optional[str] = Query(None, description="Comma-separated list of clinical stages to include"),
+    primary_joint: Optional[str] = Query(None, description="Filter by primary joint (e.g., 'shoulder')"),
+    functional_region: Optional[str] = Query(None, description="Filter by functional region (e.g., 'Upper limb')"),
+    canonical_diagnosis: Optional[str] = Query(None, description="Filter by diagnosis containing this term")
+):
     """
-    Get clinical stage statistics (Step 5).
+    Get clinical stage statistics (Step 5) with optional filtering.
+    
+    Args:
+        filter_stages: Optional comma-separated list of stages to include (e.g., "Subacute,Chronic")
+        primary_joint: Filter by primary joint (e.g., "shoulder")
+        functional_region: Filter by functional region (e.g., "Upper limb")
+        canonical_diagnosis: Filter by diagnosis containing this term
     
     Returns:
-        List of clinical stage counts with percentages
+        List of clinical stage counts with percentages (filtered if specified)
     """
     patients = get_all_patients_master_view()
+    
+    # Apply joint filter if provided
+    if primary_joint:
+        joint_lower = primary_joint.lower()
+        patients = [p for p in patients if p.primaryJoint and joint_lower in p.primaryJoint.lower()]
+    
+    # Apply functional region filter if provided
+    if functional_region:
+        patients = [p for p in patients if p.functionalRegion and p.functionalRegion.value == functional_region]
+    
+    # Apply diagnosis filter if provided
+    if canonical_diagnosis:
+        diag_lower = canonical_diagnosis.lower()
+        patients = [p for p in patients if p.canonicalDiagnosis and diag_lower in p.canonicalDiagnosis.lower()]
+    
+    # Apply stage filter if provided
+    if filter_stages:
+        allowed_stages = [stage.strip() for stage in filter_stages.split(',')]
+        patients = [p for p in patients if p.clinicalStage and p.clinicalStage.value in allowed_stages]
+    
     total = len(patients)
     
     if total == 0:

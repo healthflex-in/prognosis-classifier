@@ -54,3 +54,13 @@ backend/LLM/triage_progress.json
 backend/stance-ai-*.json
 *.json.bak
 .gstack/
+
+# Secrets / deploy keys
+*.pem
+deploy/*.pem
+
+# CSV exports
+*.csv
+
+# Backup/duplicate files
+*[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9].py

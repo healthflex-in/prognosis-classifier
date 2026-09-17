@@ -1,15 +1,106 @@
 """
-Data loader for reading and transforming triage classification JSON files.
+Data loader for reading and transforming triage classification data.
+
+Originally this read from JSON files written by the triage agent.
+We now prefer to read from MongoDB (`stance-dashboard.classification` collection)
+so the frontend always works off the latest stored classifications.
 """
+
+import os
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import time
+from threading import Lock
+
+from pymongo import MongoClient
+
 from api.models import (
     Patient, TestingFocus, ForceLevel, RiskLevel,
     PatientMasterView, FunctionalRegion, OccupationCategory, ActivityProfile, ActivitySubtype,
     ClinicalStage, PainInterference, IntentCategory
 )
+
+# Simple in-memory cache for patient data
+_patient_cache = {
+    "data": None,
+    "timestamp": 0,
+    "ttl": 30  # Cache for 30 seconds
+}
+_cache_lock = Lock()
+
+
+def _get_mongo_classification_collection():
+    """
+    Get a handle to the MongoDB classification collection.
+
+    Uses the same environment variables as the Mongo loaders:
+    - MONGO_URI or MONGODB_URI for the connection string
+    - MONGO_DB for the database name (defaults to 'stance-dashboard')
+    """
+    mongo_uri = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or "mongodb://localhost:27017/"
+    db_name = os.getenv("MONGO_DB", "stance-dashboard")
+
+    client = MongoClient(
+        mongo_uri,
+        tlsAllowInvalidCertificates=True,
+        tlsAllowInvalidHostnames=True,
+        serverSelectionTimeoutMS=5000,  # Reduced from 30s to 5s
+        connectTimeoutMS=5000,  # Reduced from 30s to 5s
+        socketTimeoutMS=10000,  # Reduced from 60s to 10s
+        retryWrites=True,
+        retryReads=True,
+        maxPoolSize=20,  # Reduced pool size
+        minPoolSize=5,   # Reduced min pool size
+    )
+    db = client[db_name]
+    return db["classification"]
+
+
+def _load_classifications_from_mongo() -> List[Dict[str, Any]]:
+    """
+    Load all classifications from MongoDB.
+
+    Returns:
+        List of classification dictionaries (with `_id` stripped and patient_id converted to string).
+    """
+    try:
+        from bson import ObjectId
+        collection = _get_mongo_classification_collection()
+
+        # Only show fully classified patients on the dashboard, and avoid
+        # pulling unnecessary fields to keep queries fast while triage runs.
+        query = {"status": "completed"}
+        projection = {
+            "_id": 1,
+            "patient_id": 1,
+            "patient_name": 1,
+            "status": 1,
+            "created_at": 1,
+            "updated_at": 1,
+            "canonical_diagnosis": 1,
+            "provisional_diagnosis": 1,
+            "extracted_fields": 1,
+            "source_data": 1,
+        }
+
+        cursor = collection.find(query, projection=projection).batch_size(500)
+        docs = list(cursor)
+
+        # Convert ObjectId fields to strings for JSON serialization
+        for doc in docs:
+            # Strip Mongo _id
+            doc.pop("_id", None)
+            # Convert patient_id from ObjectId to string if needed
+            if "patient_id" in doc and isinstance(doc["patient_id"], ObjectId):
+                doc["patient_id"] = str(doc["patient_id"])
+
+        return docs
+    except Exception as e:
+        # If Mongo is not reachable or collection missing, fall back to JSON files
+        print(f"⚠️  Error loading classifications from MongoDB, falling back to JSON files: {e}")
+        return []
 
 
 def find_latest_classification_file() -> Optional[Path]:
@@ -35,15 +126,21 @@ def find_latest_classification_file() -> Optional[Path]:
 
 def load_classifications(output_file_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Load classification data from JSON file.
-    
+    Load classification data, preferring MongoDB, with JSON file fallback.
+
     Args:
-        output_file_path: Optional specific file path to load from (for real-time updates during triage)
-    
+        output_file_path: Optional specific file path to load from (for legacy JSON-based runs)
+
     Returns:
         List of classification dictionaries
     """
-    # If a specific file is provided (from progress tracker), use it
+    # 1) Prefer MongoDB (source of truth going forward)
+    mongo_data = _load_classifications_from_mongo()
+    if mongo_data:
+        return mongo_data
+
+    # 2) Fallback to JSON files (older runs / local testing)
+    # If a specific file is provided, use it
     if output_file_path:
         classification_file = Path(output_file_path)
         if classification_file.exists():
@@ -311,6 +408,7 @@ def transform_to_master_view(classification: Dict[str, Any]) -> PatientMasterVie
 def get_all_patients_master_view(output_file_path: Optional[str] = None) -> List[PatientMasterView]:
     """
     Get all patients in master view format from the latest classification file.
+    Uses in-memory caching to improve dashboard performance.
     
     Args:
         output_file_path: Optional specific file path to load from (for real-time updates during triage)
@@ -318,5 +416,30 @@ def get_all_patients_master_view(output_file_path: Optional[str] = None) -> List
     Returns:
         List of PatientMasterView models
     """
+    current_time = time.time()
+    
+    # Use cache if data is fresh (within TTL)
+    with _cache_lock:
+        if (_patient_cache["data"] is not None and 
+            current_time - _patient_cache["timestamp"] < _patient_cache["ttl"] and
+            output_file_path is None):  # Don't use cache for specific file requests
+            return _patient_cache["data"]
+    
+    # Load fresh data
     classifications = load_classifications(output_file_path=output_file_path)
-    return [transform_to_master_view(cls) for cls in classifications]
+    patient_data = [transform_to_master_view(cls) for cls in classifications]
+    
+    # Update cache (only for general requests, not specific files)
+    if output_file_path is None:
+        with _cache_lock:
+            _patient_cache["data"] = patient_data
+            _patient_cache["timestamp"] = current_time
+    
+    return patient_data
+
+
+def clear_patient_cache():
+    """Clear the patient data cache to force fresh data loading."""
+    with _cache_lock:
+        _patient_cache["data"] = None
+        _patient_cache["timestamp"] = 0
