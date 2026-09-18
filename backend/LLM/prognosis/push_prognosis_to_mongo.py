@@ -42,6 +42,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 from LLM.prognosis.prognosis_agent import ClinicalPrognosisAgent
 from utils.vald_extractor import extract_vald_first_session
+from utils.input_gate import has_minimum_clinical_input
 from load_reports_from_mongo import MongoReportsLoader
 
 # Progress file lives next to this script
@@ -190,7 +191,7 @@ def build_patient_data_from_reports(db, patient_id: str) -> Optional[dict]:
         vald = {"vald_exercises": {}, "strength_asymmetry_percent": None,
                 "rom_asymmetry_degrees": None, "absolute_force_level": None}
 
-    return {
+    patient_data = {
         "patient_id": str(pid_obj),
         "patient_name": patient_name,
         "source_data": {
@@ -211,6 +212,15 @@ def build_patient_data_from_reports(db, patient_id: str) -> Optional[dict]:
         "absolute_force_level": vald["absolute_force_level"],
         "vald_exercises": vald["vald_exercises"],
     }
+
+    # Content gate: a report can exist (even with a non-empty `records` dict)
+    # while every clinical field inside is blank and no VALD data is present.
+    # Skip the LLM entirely in that case so we don't generate a prognosis from
+    # nothing. All live callers already treat a None return as "skip".
+    if not has_minimum_clinical_input(patient_data):
+        return None
+
+    return patient_data
 
 
 def save_to_mongo(db, patient_id: str, analysis) -> None:
@@ -338,6 +348,7 @@ def main():
     # ── Process patients ──────────────────────────────────────────────────────
     session_success = 0
     session_failed = []
+    session_skipped = 0
     start_time = time.time()
 
     for i, patient_id in enumerate(patient_ids, 1):
@@ -353,6 +364,21 @@ def main():
 
         try:
             patient_data = build_patient_data(loader, db, patient_id)
+
+            # Content gate: don't spend an LLM call on a patient with no clinical
+            # text and no VALD data — the model only ever returns an
+            # "insufficient data" placeholder (or worse, a confident diagnosis
+            # invented from nothing).
+            if not has_minimum_clinical_input(patient_data):
+                print("   ⏭️  Skipped — no clinical content or VALD data")
+                session_skipped += 1
+                progress.setdefault("skipped", []).append(patient_id)
+                save_progress(progress)
+                print_progress_bar(i, total, session_success, len(session_failed))
+                if i < total and not interrupted:
+                    time.sleep(args.delay)
+                continue
+
             analysis = agent.analyze_patient_prognosis(patient_data)
             save_to_mongo(db, patient_id, analysis)
             print(f"   ✅ Tier {analysis.probability_tier.tier} — {analysis.provisional_diagnosis[:70]}")
@@ -380,8 +406,8 @@ def main():
     # ── Summary ───────────────────────────────────────────────────────────────
     elapsed_total = int(time.time() - start_time)
     print(f"\n{'='*50}")
-    print(f"✅ Session done in {elapsed_total}s: {session_success} saved, {len(session_failed)} failed")
-    print(f"📊 Overall progress: {len(progress['done'])} done / {len(progress['failed'])} failed total")
+    print(f"✅ Session done in {elapsed_total}s: {session_success} saved, {session_skipped} skipped, {len(session_failed)} failed")
+    print(f"📊 Overall progress: {len(progress['done'])} done / {len(progress.get('skipped', []))} skipped / {len(progress['failed'])} failed total")
 
     if session_failed:
         print(f"❌ Failed this session: {session_failed}")
