@@ -1,0 +1,286 @@
+[
+  {
+    "patient_id": "683da593e2467bc639419f35",
+    "patient_name": "Abhishek Jaiswal",
+    "chief_complaint": "pt C/O pain at the neck from 2 months, since he did a 90kg bench press. He wishes to continue his gym traning pain free.",
+    "_specificity_corpus": [
+      "bench",
+      "bilateral",
+      "duration",
+      "explicitly",
+      "extension",
+      "foam",
+      "free",
+      "mobility",
+      "mobilitycx",
+      "mobsthoacic",
+      "mobxt",
+      "neck",
+      "press",
+      "reduced",
+      "roller",
+      "rotation",
+      "since",
+      "thoracic",
+      "traning",
+      "wishes"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 11.07,
+        "min_seconds": 9.55,
+        "runs": [
+          9.55,
+          12.59
+        ],
+        "top_3_action_areas": [
+          "Reduce neck pain during bench press",
+          "Improve mid-back movement for lifting",
+          "Restore rib mobility for better movement"
+        ],
+        "next_session_plan": "We will work on your neck and mid-back mobility to support your gym training.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da595e2467bc639419f4d",
+    "patient_name": "Alok Agrawal",
+    "chief_complaint": "Patient complains  of multiple joints aches and pain.bilateral heel pain,knee pain.LOW BACK ache while bending down, since many years. 4 years back took right knee MRI showed rt acl partial tear.MRI:shows dic bulge lower lumbar.",
+    "_specificity_corpus": [
+      "ache",
+      "aches",
+      "ankle",
+      "asymmetries",
+      "back",
+      "bending",
+      "bilateral",
+      "bulge",
+      "complains",
+      "down",
+      "duration",
+      "explicitly",
+      "extension",
+      "femoris",
+      "heel",
+      "initially",
+      "joints",
+      "kenzie",
+      "knee",
+      "later",
+      "lower",
+      "lumbar",
+      "many",
+      "mobility",
+      "multiple",
+      "muscle",
+      "need",
+      "partial",
+      "rectus",
+      "right",
+      "showed",
+      "shows",
+      "since",
+      "strength",
+      "stretches",
+      "tear",
+      "took",
+      "while",
+      "years"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 9.55,
+        "min_seconds": 8.36,
+        "runs": [
+          8.36,
+          10.74
+        ],
+        "top_3_action_areas": [
+          "Improve lower back comfort when bending down",
+          "Reduce bilateral heel pain with walking",
+          "Enhance hip and right knee strength and balance"
+        ],
+        "next_session_plan": "We'll work on your lower back movement and start gentle hip strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da595e2467bc639419f53",
+    "patient_name": "Amit Tirpude",
+    "chief_complaint": "came for injury prevention program ,runs half marathon started since 2 years ,last 2 months increased running training 5km/day, before 2km/dayhad B/L club foot corrected conservatively in childhoodaim is to prepare for upcoming half marathon event .",
+    "_specificity_corpus": [
+      "activation",
+      "ankle",
+      "asymmetric",
+      "calf",
+      "came",
+      "chain",
+      "childhoodaim",
+      "club",
+      "conservatively",
+      "core",
+      "corrected",
+      "cuff",
+      "dayhad",
+      "deep",
+      "event",
+      "explicitly",
+      "extensor",
+      "foot",
+      "half",
+      "increased",
+      "injury",
+      "knee",
+      "last",
+      "lumbar",
+      "marathon",
+      "mobility",
+      "muscle",
+      "posterior",
+      "prepare",
+      "prevention",
+      "program",
+      "rotator",
+      "running",
+      "runs",
+      "scapular",
+      "since",
+      "stability",
+      "started",
+      "strength",
+      "strengthening",
+      "thoracic",
+      "training",
+      "upcoming",
+      "years"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 10.63,
+        "min_seconds": 9.41,
+        "runs": [
+          9.41,
+          11.84
+        ],
+        "top_3_action_areas": [
+          "Improve lower body strength for running endurance",
+          "Restore hip and ankle mobility for efficient running",
+          "Balance knee and calf strength for running stability"
+        ],
+        "next_session_plan": "We'll work on your hip and ankle mobility and start building specific running strength.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da592e2467bc639419f22",
+    "patient_name": "Aakash Raman Sinha",
+    "chief_complaint": "patient complains of right knee pain and discomfort at lateral side of knee. Pain is tender in nature and constant. Aggravates while prolong standing and  running.also he wanted to get a full body assessment and running analysis.Has a half marathon on 6th oct 2024 and the next in jan 2025 (half)",
+    "_specificity_corpus": [
+      "aggravates",
+      "analysis",
+      "ankle",
+      "asymmetries",
+      "bilateral",
+      "bilaterally",
+      "body",
+      "complains",
+      "conditioning",
+      "constant",
+      "discomfort",
+      "duration",
+      "explicitly",
+      "extensions",
+      "femoris",
+      "flexor",
+      "full",
+      "half",
+      "internal",
+      "knee",
+      "lateral",
+      "left",
+      "length",
+      "marathon",
+      "march",
+      "muscle",
+      "nature",
+      "prolong",
+      "rectus",
+      "right",
+      "rotation",
+      "running",
+      "side",
+      "since",
+      "stability",
+      "standing",
+      "strength",
+      "stretch",
+      "tender",
+      "wanted",
+      "while"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 10.05,
+        "min_seconds": 9.81,
+        "runs": [
+          9.81,
+          10.29
+        ],
+        "top_3_action_areas": [
+          "Improve right knee comfort during standing and running",
+          "Enhance left hip control for running mechanics",
+          "Balance muscle strength for efficient running"
+        ],
+        "next_session_plan": "We'll begin addressing your hip control and right knee comfort for running.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  }
+]

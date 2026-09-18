@@ -1,0 +1,626 @@
+[
+  {
+    "patient_id": "683da593e2467bc639419f35",
+    "patient_name": "Abhishek Jaiswal",
+    "chief_complaint": "pt C/O pain at the neck from 2 months, since he did a 90kg bench press. He wishes to continue his gym traning pain free.",
+    "_specificity_corpus": [
+      "bench",
+      "bilateral",
+      "duration",
+      "explicitly",
+      "extension",
+      "foam",
+      "free",
+      "mobility",
+      "mobilitycx",
+      "mobsthoacic",
+      "mobxt",
+      "neck",
+      "press",
+      "reduced",
+      "roller",
+      "rotation",
+      "since",
+      "thoracic",
+      "traning",
+      "wishes"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 7.83,
+        "min_seconds": 7.73,
+        "runs": [
+          7.93,
+          7.73
+        ],
+        "top_3_action_areas": [
+          "Reduce pain and restore comfortable movement",
+          "Improve strength and physical function",
+          "Build tolerance to activity and daily tasks"
+        ],
+        "next_session_plan": "We will begin hands-on treatment and targeted exercises in your next session.",
+        "quality": {
+          "total": 52.3,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 0.0,
+            "specificity": 7.3,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 1,
+          "violations": [
+            "generic/forbidden phrasing: 'Reduce pain and restore comfortable movement' (~'reduce pain and restore comfortable movement')",
+            "generic/forbidden phrasing: 'Improve strength and physical function' (~'improve strength and physical function')",
+            "generic/forbidden phrasing: 'Build tolerance to activity and daily tasks' (~'build tolerance to activity')",
+            "area 1 not anchored to this patient: 'Reduce pain and restore comfortable movement'",
+            "area 3 not anchored to this patient: 'Build tolerance to activity and daily tasks'",
+            "next_session_plan not anchored to this patient"
+          ]
+        }
+      },
+      "256 (capped)": {
+        "median_seconds": 2.36,
+        "min_seconds": 2.25,
+        "runs": [
+          2.25,
+          2.46
+        ],
+        "top_3_action_areas": [
+          "Improve neck comfort during bench press",
+          "Increase thoracic spine movement for lifting",
+          "Build overall strength for gym training"
+        ],
+        "next_session_plan": "We will work on your neck and upper back movement, and start gentle strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "128 (capped)": {
+        "median_seconds": 1.76,
+        "min_seconds": 1.69,
+        "runs": [
+          1.69,
+          1.84
+        ],
+        "top_3_action_areas": [
+          "Improve neck comfort during gym training",
+          "Restore full neck movement for daily activities",
+          "Build strength for pain-free bench pressing"
+        ],
+        "next_session_plan": "We'll work on your neck and upper back movement, and gentle strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "0 (off)": {
+        "median_seconds": 1.16,
+        "min_seconds": 1.12,
+        "runs": [
+          1.12,
+          1.2
+        ],
+        "top_3_action_areas": [
+          "Improve neck comfort during gym training",
+          "Increase thoracic spine mobility for lifting",
+          "Build neck strength for bench press"
+        ],
+        "next_session_plan": "We will work on your neck and mid-back mobility, and start gentle strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da595e2467bc639419f4d",
+    "patient_name": "Alok Agrawal",
+    "chief_complaint": "Patient complains  of multiple joints aches and pain.bilateral heel pain,knee pain.LOW BACK ache while bending down, since many years. 4 years back took right knee MRI showed rt acl partial tear.MRI:shows dic bulge lower lumbar.",
+    "_specificity_corpus": [
+      "ache",
+      "aches",
+      "ankle",
+      "asymmetries",
+      "back",
+      "bending",
+      "bilateral",
+      "bulge",
+      "complains",
+      "down",
+      "duration",
+      "explicitly",
+      "extension",
+      "femoris",
+      "heel",
+      "initially",
+      "joints",
+      "kenzie",
+      "knee",
+      "later",
+      "lower",
+      "lumbar",
+      "many",
+      "mobility",
+      "multiple",
+      "muscle",
+      "need",
+      "partial",
+      "rectus",
+      "right",
+      "showed",
+      "shows",
+      "since",
+      "strength",
+      "stretches",
+      "tear",
+      "took",
+      "while",
+      "years"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 7.07,
+        "min_seconds": 6.77,
+        "runs": [
+          6.77,
+          7.37
+        ],
+        "top_3_action_areas": [
+          "Reduce pain and restore comfortable movement",
+          "Improve strength and physical function",
+          "Build tolerance to activity and daily tasks"
+        ],
+        "next_session_plan": "We will begin hands-on treatment and targeted exercises in your next session.",
+        "quality": {
+          "total": 52.3,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 0.0,
+            "specificity": 7.3,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 1,
+          "violations": [
+            "generic/forbidden phrasing: 'Reduce pain and restore comfortable movement' (~'reduce pain and restore comfortable movement')",
+            "generic/forbidden phrasing: 'Improve strength and physical function' (~'improve strength and physical function')",
+            "generic/forbidden phrasing: 'Build tolerance to activity and daily tasks' (~'build tolerance to activity')",
+            "area 1 not anchored to this patient: 'Reduce pain and restore comfortable movement'",
+            "area 3 not anchored to this patient: 'Build tolerance to activity and daily tasks'",
+            "next_session_plan not anchored to this patient"
+          ]
+        }
+      },
+      "256 (capped)": {
+        "median_seconds": 2.83,
+        "min_seconds": 2.6,
+        "runs": [
+          3.06,
+          2.6
+        ],
+        "top_3_action_areas": [
+          "Improve lower back comfort when bending down",
+          "Reduce bilateral heel pain with daily activities",
+          "Strengthen hip muscles for better balance"
+        ],
+        "next_session_plan": "We will start with gentle lower back mobility and hip strengthening exercises.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "128 (capped)": {
+        "median_seconds": 1.56,
+        "min_seconds": 1.45,
+        "runs": [
+          1.45,
+          1.66
+        ],
+        "top_3_action_areas": [
+          "Reduce low back ache when bending down",
+          "Improve strength for both heels",
+          "Increase right knee comfort and stability"
+        ],
+        "next_session_plan": "We will start with gentle low back movement and begin strengthening your heels.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "0 (off)": {
+        "median_seconds": 1.28,
+        "min_seconds": 1.22,
+        "runs": [
+          1.22,
+          1.35
+        ],
+        "top_3_action_areas": [
+          "Reduce bilateral heel pain with daily activities",
+          "Improve knee comfort and stability for movement",
+          "Ease lower back ache when bending down"
+        ],
+        "next_session_plan": "We'll work on your lower back mobility and begin gentle strengthening for your hips.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da595e2467bc639419f53",
+    "patient_name": "Amit Tirpude",
+    "chief_complaint": "came for injury prevention program ,runs half marathon started since 2 years ,last 2 months increased running training 5km/day, before 2km/dayhad B/L club foot corrected conservatively in childhoodaim is to prepare for upcoming half marathon event .",
+    "_specificity_corpus": [
+      "activation",
+      "ankle",
+      "asymmetric",
+      "calf",
+      "came",
+      "chain",
+      "childhoodaim",
+      "club",
+      "conservatively",
+      "core",
+      "corrected",
+      "cuff",
+      "dayhad",
+      "deep",
+      "event",
+      "explicitly",
+      "extensor",
+      "foot",
+      "half",
+      "increased",
+      "injury",
+      "knee",
+      "last",
+      "lumbar",
+      "marathon",
+      "mobility",
+      "muscle",
+      "posterior",
+      "prepare",
+      "prevention",
+      "program",
+      "rotator",
+      "running",
+      "runs",
+      "scapular",
+      "since",
+      "stability",
+      "started",
+      "strength",
+      "strengthening",
+      "thoracic",
+      "training",
+      "upcoming",
+      "years"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 6.87,
+        "min_seconds": 6.29,
+        "runs": [
+          6.29,
+          7.44
+        ],
+        "top_3_action_areas": [
+          "Reduce pain and restore comfortable movement",
+          "Improve strength and physical function",
+          "Build tolerance to activity and daily tasks"
+        ],
+        "next_session_plan": "We will begin hands-on treatment and targeted exercises in your next session.",
+        "quality": {
+          "total": 52.3,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 0.0,
+            "specificity": 7.3,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 1,
+          "violations": [
+            "generic/forbidden phrasing: 'Reduce pain and restore comfortable movement' (~'reduce pain and restore comfortable movement')",
+            "generic/forbidden phrasing: 'Improve strength and physical function' (~'improve strength and physical function')",
+            "generic/forbidden phrasing: 'Build tolerance to activity and daily tasks' (~'build tolerance to activity')",
+            "area 1 not anchored to this patient: 'Reduce pain and restore comfortable movement'",
+            "area 3 not anchored to this patient: 'Build tolerance to activity and daily tasks'",
+            "next_session_plan not anchored to this patient"
+          ]
+        }
+      },
+      "256 (capped)": {
+        "median_seconds": 2.49,
+        "min_seconds": 2.44,
+        "runs": [
+          2.54,
+          2.44
+        ],
+        "top_3_action_areas": [
+          "Improve hip and ankle mobility for running",
+          "Strengthen posterior chain for running endurance",
+          "Balance knee strength for half marathon training"
+        ],
+        "next_session_plan": "We'll start with hip mobility and begin strengthening your posterior chain.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "128 (capped)": {
+        "median_seconds": 1.82,
+        "min_seconds": 1.82,
+        "runs": [
+          1.82,
+          1.82
+        ],
+        "top_3_action_areas": [
+          "Build running tolerance for half marathon",
+          "Improve hip and ankle mobility",
+          "Strengthen posterior chain and calf muscles"
+        ],
+        "next_session_plan": "We'll start with hip mobility and strengthening for your running.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "0 (off)": {
+        "median_seconds": 1.18,
+        "min_seconds": 1.06,
+        "runs": [
+          1.3,
+          1.06
+        ],
+        "top_3_action_areas": [
+          "Improve hip and ankle mobility for running",
+          "Strengthen posterior chain for half marathon training",
+          "Balance knee extensor strength for running"
+        ],
+        "next_session_plan": "We will start with hands-on work for your hip and ankle mobility.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  },
+  {
+    "patient_id": "683da592e2467bc639419f22",
+    "patient_name": "Aakash Raman Sinha",
+    "chief_complaint": "patient complains of right knee pain and discomfort at lateral side of knee. Pain is tender in nature and constant. Aggravates while prolong standing and  running.also he wanted to get a full body assessment and running analysis.Has a half marathon on 6th oct 2024 and the next in jan 2025 (half)",
+    "_specificity_corpus": [
+      "aggravates",
+      "analysis",
+      "ankle",
+      "asymmetries",
+      "bilateral",
+      "bilaterally",
+      "body",
+      "complains",
+      "conditioning",
+      "constant",
+      "discomfort",
+      "duration",
+      "explicitly",
+      "extensions",
+      "femoris",
+      "flexor",
+      "full",
+      "half",
+      "internal",
+      "knee",
+      "lateral",
+      "left",
+      "length",
+      "marathon",
+      "march",
+      "muscle",
+      "nature",
+      "prolong",
+      "rectus",
+      "right",
+      "rotation",
+      "running",
+      "side",
+      "since",
+      "stability",
+      "standing",
+      "strength",
+      "stretch",
+      "tender",
+      "wanted",
+      "while"
+    ],
+    "by_budget": {
+      "auto (baseline)": {
+        "median_seconds": 7.25,
+        "min_seconds": 7.18,
+        "runs": [
+          7.33,
+          7.18
+        ],
+        "top_3_action_areas": [
+          "Reduce pain and restore comfortable movement",
+          "Improve strength and physical function",
+          "Build tolerance to activity and daily tasks"
+        ],
+        "next_session_plan": "We will begin hands-on treatment and targeted exercises in your next session.",
+        "quality": {
+          "total": 52.3,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 0.0,
+            "specificity": 7.3,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 1,
+          "violations": [
+            "generic/forbidden phrasing: 'Reduce pain and restore comfortable movement' (~'reduce pain and restore comfortable movement')",
+            "generic/forbidden phrasing: 'Improve strength and physical function' (~'improve strength and physical function')",
+            "generic/forbidden phrasing: 'Build tolerance to activity and daily tasks' (~'build tolerance to activity')",
+            "area 1 not anchored to this patient: 'Reduce pain and restore comfortable movement'",
+            "area 3 not anchored to this patient: 'Build tolerance to activity and daily tasks'",
+            "next_session_plan not anchored to this patient"
+          ]
+        }
+      },
+      "256 (capped)": {
+        "median_seconds": 2.53,
+        "min_seconds": 2.5,
+        "runs": [
+          2.5,
+          2.56
+        ],
+        "top_3_action_areas": [
+          "Reduce right knee pain during standing and running",
+          "Improve hip strength and control for running",
+          "Build ankle stability for better running mechanics"
+        ],
+        "next_session_plan": "We'll start with hands-on work for your right knee and begin hip strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "128 (capped)": {
+        "median_seconds": 1.76,
+        "min_seconds": 1.71,
+        "runs": [
+          1.71,
+          1.81
+        ],
+        "top_3_action_areas": [
+          "Reduce right knee pain during prolonged standing",
+          "Improve right knee comfort for running",
+          "Strengthen hip muscles for better running stability"
+        ],
+        "next_session_plan": "We'll start hands-on work for your right knee and begin hip strengthening exercises.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      },
+      "0 (off)": {
+        "median_seconds": 1.2,
+        "min_seconds": 1.08,
+        "runs": [
+          1.08,
+          1.32
+        ],
+        "top_3_action_areas": [
+          "Reduce right knee pain during prolonged standing and running",
+          "Improve left hip extension and internal rotation strength",
+          "Increase overall hip and ankle strength for running"
+        ],
+        "next_session_plan": "We'll start with hands-on work for your right knee and begin hip strengthening.",
+        "quality": {
+          "total": 100.0,
+          "breakdown": {
+            "structure": 30.0,
+            "no_generic": 25.0,
+            "specificity": 30.0,
+            "distinct": 10.0,
+            "no_alarming": 5.0
+          },
+          "specific_area_count": 3,
+          "violations": []
+        }
+      }
+    }
+  }
+]
