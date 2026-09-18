@@ -170,17 +170,63 @@ def _clean_json(raw: str) -> str:
     return raw
 
 
+# ── Config (env-tunable, no redeploy needed to change) ─────────────────────────
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+# Thinking budget for gemini-2.5-flash (this is a tiny, structured output task):
+#   -1 = dynamic / "Auto"  → the model decides (original production behaviour)
+#    0 = thinking disabled  → fastest, but may weaken 3-area prioritisation
+#   >0 = capped thinking tokens (e.g. 128 keeps most reasoning, cuts most latency)
+# Default 128: keep the prioritisation reasoning, drop the multi-thousand-token
+# "thinking" that was the bulk of the ~15s latency.
+DEFAULT_THINKING_BUDGET = _env_int("RECOMMENDATION_THINKING_BUDGET", 128)
+# Output is 3 short phrases + one <=90 char sentence — 8192 was wildly oversized.
+DEFAULT_MAX_TOKENS = _env_int("RECOMMENDATION_MAX_TOKENS", 1024)
+
+
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 class RecommendationAgent:
-    def __init__(self):
-        self.llm = ChatVertexAI(
+    def __init__(
+        self,
+        thinking_budget: Optional[int] = DEFAULT_THINKING_BUDGET,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+    ):
+        self.thinking_budget = thinking_budget
+        self.max_tokens = max_tokens
+        self.llm = self._build_llm(thinking_budget, max_tokens)
+
+    @staticmethod
+    def _build_llm(thinking_budget: Optional[int], max_tokens: int) -> ChatVertexAI:
+        kwargs: Dict[str, Any] = dict(
             model="gemini-2.5-flash",
             project=os.getenv("GOOGLE_CLOUD_PROJECT", "stance-ai"),
             location="us-central1",
             temperature=0.3,
-            max_tokens=8192,
+            max_tokens=max_tokens,
         )
+        # thinking_budget=None means "don't pass it" → library default (Auto),
+        # i.e. the exact original behaviour.
+        if thinking_budget is not None:
+            try:
+                return ChatVertexAI(thinking_budget=thinking_budget, **kwargs)
+            except TypeError:
+                # Installed langchain-google-vertexai predates the thinking_budget
+                # kwarg — degrade to library default instead of crashing.
+                print(
+                    "⚠️  ChatVertexAI has no 'thinking_budget' kwarg in this "
+                    "version; falling back to default (Auto) thinking."
+                )
+        return ChatVertexAI(**kwargs)
 
     def generate(self, patient_data: Dict[str, Any]) -> RecommendationOutput:
         user_prompt = _build_user_prompt(patient_data)
