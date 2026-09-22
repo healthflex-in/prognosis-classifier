@@ -62,7 +62,15 @@ async def websocket_recommendation(websocket: WebSocket):
         partial = await asyncio.to_thread(
             lambda: db["partial-reports"].find_one({"patient_id": pid_obj})
         )
-        current_hash = partial.get("hash") if partial else None
+        from api.recommendation_draft import prepare_recommendation
+        try:
+            patient_data, current_hash = await asyncio.to_thread(
+                prepare_recommendation, db, patient_id, partial, msg.get("report_id")
+            )
+        except ValueError as error:
+            await websocket.send_json({"error": str(error)})
+            await websocket.close()
+            return
 
         rec_doc = await asyncio.to_thread(
             lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
@@ -77,24 +85,10 @@ async def websocket_recommendation(websocket: WebSocket):
             return
 
         from api.routes.recommendation import build_recommendation_input, save_recommendation
-        patient_data = await asyncio.to_thread(build_recommendation_input, db, patient_id)
-        if not patient_data:
-            await websocket.send_json({"error": f"No usable first-assessment report for patient {patient_id}"})
-            await websocket.close()
-            return
-
-        if partial and partial.get("fields"):
-            pf = partial["fields"]
-            sd = patient_data.setdefault("source_data", {})
-            if pf.get("chief_complaint"):       sd["chief_complaint"]           = pf["chief_complaint"]
-            if pf.get("client_history"):        sd["clinical_history"]          = pf["client_history"]
-            if pf.get("subjective_assessment"): sd["subjective_notes"]          = pf["subjective_assessment"]
-            if pf.get("provisional_diagnosis"): sd["provisional_diagnosis_raw"] = pf["provisional_diagnosis"]
-
         from LLM.recommendation.recommendation_agent import RecommendationAgent
         agent = RecommendationAgent()
         output = await asyncio.to_thread(agent.generate, patient_data)
-        await asyncio.to_thread(save_recommendation, db, patient_id, output, current_hash)
+        await asyncio.to_thread(save_recommendation, db, patient_id, output, current_hash, partial.get("hash"))
 
         await websocket.send_json({
             "top_3_action_areas": output.top_3_action_areas,

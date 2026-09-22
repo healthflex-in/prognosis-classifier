@@ -133,6 +133,7 @@ def _build_user_prompt(patient_data: Dict[str, Any]) -> str:
         f"Clinical History: {clinical_history}",
         f"Subjective Notes: {subjective_notes}",
         f"Patient Goals: {patient_goals}",
+        f"NPRS pain score: {sd.get('nprs', 'Not provided')}",
     ]
 
     if objective_notes:

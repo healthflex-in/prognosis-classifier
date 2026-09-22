@@ -175,7 +175,7 @@ def build_recommendation_input(db, patient_id: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def save_recommendation(db, patient_id: str, output, input_hash: Optional[str] = None) -> None:
+def save_recommendation(db, patient_id: str, output, input_hash: Optional[str] = None, draft_hash: Optional[str] = None) -> None:
     col = db["recommendation-data"]
     try:
         pid = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
@@ -190,6 +190,7 @@ def save_recommendation(db, patient_id: str, output, input_hash: Optional[str] =
     }
     if input_hash is not None:
         set_doc["input_hash"] = input_hash
+    set_doc["draft_hash"] = draft_hash
 
     col.update_one(
         {"patient_id": pid},
