@@ -2,7 +2,7 @@
 """
 Recommendation Agent
 Generates two patient-facing retention fields from a completed first-assessment report:
-  - top_3_action_areas: 3 action-oriented priority phrases (max 40 characters each)
+  - top_3_action_areas: 3 action-oriented priority phrases (max 35 characters each)
   - next_session_plan:  1-2 short patient-friendly sentences (max 90 chars) describing next steps
 """
 
@@ -29,7 +29,7 @@ if backend_env.exists():
 
 class RecommendationOutput(BaseModel):
     top_3_action_areas: List[str] = Field(
-        description="Exactly 3 action-oriented priority areas (max 40 characters each)"
+        description="Exactly 3 action-oriented priority areas (max 35 characters each)"
     )
     next_session_plan: str = Field(
         description="Max 90 characters, 1-2 sentences, patient-friendly, forward-looking"
@@ -57,7 +57,7 @@ Every concern and the session plan MUST be specific to THIS patient's actual dat
 
 FIELD 1 — top_3_action_areas:
 - Return EXACTLY 3 items.
-- Each item MUST be 40 characters or fewer (hard limit — count every character including spaces).
+- Each item MUST be 35 characters or fewer (hard limit — count every character including spaces).
 - Each item MUST name the specific body region, movement pattern, or activity from this patient's assessment (e.g. "knee", "shoulder", "running", "sitting tolerance", "overhead reach", "stair descent", "throwing").
 - Phrase each as an action or improvement area — NEVER as a diagnosis, test result, or clinical label.
   - Good: "Knee strength for stair climbing", "Pain-free shoulder overhead reach", "Build running distance gradually", "Reduce neck stiffness at desk"
@@ -89,9 +89,9 @@ If the assessment lacks enough detail, use the most conservative phrasing that i
 Respond with this exact JSON structure:
 {
   "top_3_action_areas": [
-    "string — max 40 chars, specific to this patient's complaint/body area",
-    "string — max 40 chars, specific to this patient's findings/goals",
-    "string — max 40 chars, specific to this patient's functional limitation"
+    "string — max 35 chars, specific to this patient's complaint/body area",
+    "string — max 35 chars, specific to this patient's findings/goals",
+    "string — max 35 chars, specific to this patient's functional limitation"
   ],
   "next_session_plan": "string — max 90 characters, specific to this patient, forward-looking"
 }"""
@@ -244,7 +244,7 @@ class RecommendationAgent:
             if len(areas) < 3:
                 areas += ["Continue with your rehabilitation programme"] * (3 - len(areas))
             return RecommendationOutput(
-                top_3_action_areas=[a[:40] for a in areas[:3]],
+                top_3_action_areas=[a[:35] for a in areas[:3]],
                 next_session_plan=(data.get("next_session_plan") or "")[:90],
             )
         except Exception as e:

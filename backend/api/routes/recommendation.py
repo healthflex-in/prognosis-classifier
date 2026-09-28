@@ -10,7 +10,7 @@ import sys
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
@@ -237,6 +237,20 @@ async def get_recommendation(patient_id: str) -> RecommendationResponse:
 class RecommendationPatch(BaseModel):
     top_3_action_areas: Optional[List[str]] = None
     next_session_plan: Optional[str] = None
+
+    @field_validator("top_3_action_areas")
+    @classmethod
+    def validate_areas(cls, value):
+        if value is None or len(value) != 3 or any(not area.strip() for area in value):
+            raise ValueError("Exactly three nonblank action areas are required")
+        return [area.strip() for area in value]
+
+    @field_validator("next_session_plan")
+    @classmethod
+    def validate_plan(cls, value):
+        if value is None or not value.strip():
+            raise ValueError("A nonblank next-session plan is required")
+        return value.strip()
 
 
 @router.patch("/{patient_id}", response_model=RecommendationResponse)
