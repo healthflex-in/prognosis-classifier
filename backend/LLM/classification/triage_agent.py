@@ -405,7 +405,7 @@ class TriageAgent:
             raise
         
         # Load system prompt from JSON file
-        prompt_file = backend_dir / "triage_prompt.json"
+        prompt_file = Path(__file__).parent / "triage_prompt.json"
         try:
             with open(prompt_file, 'r') as f:
                 prompt_config = json.load(f)
@@ -419,34 +419,70 @@ class TriageAgent:
             self.system_prompt = self._get_default_prompt()
     
     def _get_default_prompt(self) -> str:
-        """Get default system prompt if JSON file is not available."""
-        return """You are an Expert Physiotherapy Triage Agent. Your task is to classify incoming patients into a structured recovery matrix.
+        """Get a schema-compatible prompt if the main prompt file is unavailable."""
+        return """You are an expert physiotherapy triage agent. Analyze the patient's diagnosis, chief complaint, clinical history, subjective notes, and goals.
 
-For each patient, analyze the 'Diagnosis' and 'Chief Complaints' and provide a classification based on three specific axes:
+Return ONLY one valid JSON object. It must use this exact structure:
+{
+  "source_data": {
+    "provisional_diagnosis_raw": "string",
+    "chief_complaint": "string",
+    "clinical_history": "string",
+    "subjective_notes": "string or null",
+    "goals_raw": "string or null"
+  },
+  "extracted_fields": {
+    "provisional_diagnosis": {
+      "canonical_label": "Knee pain|Hip pain|Ankle/Foot pain|Shoulder pain|Elbow/Wrist/Hand pain|Cervical spine pain|Thoracic spine pain|Lumbar spine pain|Multi-site / multi-joint pain|Post-operative rehabilitation|Other|Unclear",
+      "confidence": "high|medium|low",
+      "raw_matches": [],
+      "diagnosis_type": "single|multiple|unclear"
+    },
+    "joint_mapping": {
+      "primary_joint": "standardized joint name",
+      "functional_region": "upper_limb|lower_limb|spine|posterior_chain|multi_joint",
+      "is_multi_joint": false
+    },
+    "clinical_stage": {
+      "stage": "acute|subacute|chronic|recurrent|pre_hab|post_operative|unclear",
+      "evidence": []
+    },
+    "activity_profile": {
+      "primary_category": "sedentary|recreationally_active|structured_fitness|competitive|unclear",
+      "sub_category": "running_dominant|gym_strength|sport_specific|mixed_fitness|unclear",
+      "evidence": []
+    },
+    "occupation": {
+      "category": "sedentary_desk|manual_physical|student|athlete|retired|unclear",
+      "evidence": []
+    },
+    "pain_interference": {
+      "category": "no_interference|activity_interference|work_interference|multi_domain|forced_entry|unclear",
+      "domains_affected": [],
+      "confidence": "high|medium|low"
+    },
+    "pain_intensity_nprs": {
+      "value": null,
+      "scale": "NPRS",
+      "found": false,
+      "extraction_method": null,
+      "evidence_text": null
+    },
+    "intent": {
+      "primary_intent": "pain_relief|return_daily_function|return_activity|return_sport|performance|post_surgical|unclear",
+      "confidence": "high|medium|low",
+      "evidence": []
+    }
+  },
+  "data_quality_flags": {
+    "nprs_available": false,
+    "occupation_available": false,
+    "intent_clear": false,
+    "diagnosis_clear": false
+  }
+}
 
-1. Criticality Level:
-
-High: Acute injuries (<4 weeks), post-surgical cases (ACLR, repairs), or suspected fractures/stress reactions.
-
-Medium: Significant functional limitations, chronic pain affecting gait, or mechanical blocks.
-
-Low: Postural issues, general stiffness, or wellness/preventative cases.
-
-2. Recovery Goal:
-
-Return to Action (RTA): Goal is daily living, walking without pain, or desk-job ergonomics.
-
-Return to Sports (RTS): Goal is high-impact activity (running, football, basketball). Look for keywords like 'cutting', 'agility', or specific sports names.
-
-3. Timeline Class:
-
-Acute: Symptoms < 6 weeks.
-
-Sub-Acute: Symptoms 6 weeks to 3 months.
-
-Chronic: Symptoms > 3 months.
-
-Output Format: Return only a JSON object with the keys: criticality, goal, timeline_status, and reasoning_summary. The criticality must be one of: High, Medium, Low. The goal must be one of: RTA, RTS. The timeline_status must be one of: Acute, Sub-Acute, Chronic."""
+Use the patient's actual text as evidence. Infer reasonable values when the record supports them, but use Unclear when the information is genuinely unavailable. Do not add fields outside this structure."""
     
     
     def _classify_risk_stratification(
@@ -699,12 +735,31 @@ Output Format: Return only a JSON object with the keys: criticality, goal, timel
                 context_parts.append(f"Subjective Assessment: {subjective_notes}")
             if goals_raw:
                 context_parts.append(f"Goals/Expectations: {goals_raw}")
-            
+
+            # A prognosis fallback is prior AI output, not a clinician diagnosis.
+            # Keep it explicitly labeled so Gemini can use it as supporting context
+            # without treating it as confirmed source data.
+            prior_prognosis = (
+                full_patient_record.get('prior_prognosis')
+                if isinstance(full_patient_record, dict) else None
+            ) or (
+                record.get('prior_prognosis')
+                if isinstance(record, dict) else None
+            )
+            if isinstance(prior_prognosis, dict) and prior_prognosis.get('provisional_diagnosis'):
+                tier = prior_prognosis.get('probability_tier') or {}
+                sufficiency = prior_prognosis.get('diagnostic_sufficiency') or {}
+                context_parts.append(
+                    "Prior prognosis (AI-generated supporting context; not a clinician diagnosis): "
+                    f"{prior_prognosis['provisional_diagnosis']}. "
+                    f"Probability tier: {tier.get('tier', 'unknown')}. "
+                    f"Diagnostic sufficiency: {sufficiency.get('is_sufficient', 'unknown')}.")
+
             # Include any other relevant fields from the record
             for key in ['recommendations', 'treatment_plan', 'notes', 'assessment_notes']:
                 if record.get(key):
                     context_parts.append(f"{key.replace('_', ' ').title()}: {record.get(key)}")
-            
+
             if context_parts:
                 additional_context = "\n\n" + "\n".join(context_parts)
         
