@@ -77,6 +77,94 @@ STANDARD_JOINTS = [
 ]
 
 
+DIAGNOSIS_LABELS = (
+    "Knee pain", "Hip pain", "Ankle/Foot pain", "Shoulder pain",
+    "Elbow/Wrist/Hand pain", "Cervical spine pain", "Thoracic spine pain",
+    "Lumbar spine pain", "Multi-site / multi-joint pain",
+    "Post-operative rehabilitation", "Other", "Unclear",
+)
+CONFIDENCE_VALUES = ("high", "medium", "low")
+DIAGNOSIS_TYPES = ("single", "multiple", "unclear")
+FUNCTIONAL_REGIONS = ("upper_limb", "lower_limb", "spine", "posterior_chain", "multi_joint", "unclear")
+CLINICAL_STAGES = ("acute", "subacute", "chronic", "recurrent", "pre_hab", "post_operative", "unclear")
+ACTIVITY_CATEGORIES = ("sedentary", "recreationally_active", "structured_fitness", "competitive", "unclear")
+ACTIVITY_SUBCATEGORIES = ("running_dominant", "gym_strength", "sport_specific", "mixed_fitness", "unclear")
+OCCUPATION_CATEGORIES = ("sedentary_desk", "manual_physical", "student", "athlete", "retired", "unclear")
+PAIN_INTERFERENCE_CATEGORIES = ("no_interference", "activity_interference", "work_interference", "multi_domain", "forced_entry", "unclear")
+INTENT_CATEGORIES = ("pain_relief", "return_daily_function", "return_activity", "return_sport", "performance", "post_surgical", "unclear")
+NPRS_METHODS = ("explicit_numeric", "inferred")
+
+
+def _category_key(value: Any) -> str:
+    """Create a comparable key for category values from Gemini or JSON."""
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def _normalize_category(value: Any, allowed: tuple, field_name: str, aliases: Optional[Dict[str, str]] = None, default: str = "unclear") -> str:
+    """Normalize an allowed category and safely downgrade unsupported values."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    lookup = {_category_key(item): item for item in allowed}
+    lookup.update(aliases or {})
+    normalized = lookup.get(_category_key(value))
+    if normalized is None:
+        print(f"⚠️  Unsupported {field_name} value {value!r}; normalized to {default!r}")
+        return default
+    return normalized
+
+
+def normalize_extracted_categories(extracted: Dict[str, Any]) -> None:
+    """Normalize and validate all categorical fields before quality flags/Pydantic."""
+    diagnosis = extracted.setdefault("provisional_diagnosis", {})
+    diagnosis["canonical_label"] = _normalize_category(
+        diagnosis.get("canonical_label"), DIAGNOSIS_LABELS, "canonical diagnosis", default="Unclear"
+    )
+    diagnosis["confidence"] = _normalize_category(diagnosis.get("confidence"), CONFIDENCE_VALUES, "diagnosis confidence")
+    diagnosis["diagnosis_type"] = _normalize_category(diagnosis.get("diagnosis_type"), DIAGNOSIS_TYPES, "diagnosis type")
+
+    joint = extracted.setdefault("joint_mapping", {})
+    joint["primary_joint"] = normalize_joint_name(joint.get("primary_joint"))
+    joint["functional_region"] = _normalize_category(joint.get("functional_region"), FUNCTIONAL_REGIONS, "functional region", {
+        "upper_limb": "upper_limb", "lower_limb": "lower_limb", "posterior_chain": "posterior_chain", "multi_joint": "multi_joint"
+    })
+
+    stage = extracted.setdefault("clinical_stage", {})
+    stage["stage"] = _normalize_category(stage.get("stage"), CLINICAL_STAGES, "clinical stage", {
+        "pre_hab_pre_surgical": "pre_hab", "postoperative": "post_operative"
+    })
+
+    activity = extracted.setdefault("activity_profile", {})
+    activity["primary_category"] = _normalize_category(activity.get("primary_category"), ACTIVITY_CATEGORIES, "activity category", {
+        "sedentary_minimally_active": "sedentary", "competitive_elite_sport": "competitive"
+    })
+    activity["sub_category"] = _normalize_category(activity.get("sub_category"), ACTIVITY_SUBCATEGORIES, "activity subtype", {
+        "gym_strength_dominant": "gym_strength", "mixed_general_fitness": "mixed_fitness"
+    }) if activity.get("sub_category") is not None else None
+
+    occupation = extracted.setdefault("occupation", {})
+    occupation["category"] = _normalize_category(occupation.get("category"), OCCUPATION_CATEGORIES, "occupation category", {
+        "sedentary_desk_based": "sedentary_desk", "manual_physical": "manual_physical"
+    })
+
+    pain = extracted.setdefault("pain_interference", {})
+    pain["category"] = _normalize_category(pain.get("category"), PAIN_INTERFERENCE_CATEGORIES, "pain interference", {
+        "no_minimal_interference": "no_interference", "activity_only_interference": "activity_interference", "work_daily_function_interference": "work_interference"
+    })
+    pain["confidence"] = _normalize_category(pain.get("confidence"), CONFIDENCE_VALUES, "pain confidence")
+
+    nprs = extracted.setdefault("pain_intensity_nprs", {})
+    nprs["extraction_method"] = _normalize_category(nprs.get("extraction_method"), NPRS_METHODS, "NPRS extraction method", default=None) if nprs.get("extraction_method") else None
+    nprs["scale"] = _normalize_category(nprs.get("scale"), ("NPRS", "VAS", "other"), "pain scale", {"nprs": "NPRS", "vas": "VAS"}, default="NPRS")
+
+    intent = extracted.setdefault("intent", {})
+    intent["primary_intent"] = _normalize_category(intent.get("primary_intent"), INTENT_CATEGORIES, "intent", {
+        "pain_relief_only": "pain_relief", "return_to_daily_function": "return_daily_function", "return_to_activity_fitness": "return_activity", "return_to_sport": "return_sport", "performance_optimisation": "performance", "post_surgical_recovery": "post_surgical"
+    })
+    intent["confidence"] = _normalize_category(intent.get("confidence"), CONFIDENCE_VALUES, "intent confidence")
+
+
+
 def normalize_joint_name(joint_name: str) -> str:
     """
     Normalize joint name to standard format.
@@ -95,7 +183,7 @@ def normalize_joint_name(joint_name: str) -> str:
     # Mapping of variations to standard names
     joint_mapping = {
         # Knee variations
-        "knee": "Bilateral Knee",
+        "knee": "Other",
         "l knee": "Left Knee",
         "left knee": "Left Knee",
         "r knee": "Right Knee",
@@ -106,7 +194,7 @@ def normalize_joint_name(joint_name: str) -> str:
         "right knee (": "Right Knee",
         
         # Ankle variations
-        "ankle": "Bilateral Ankle",
+        "ankle": "Other",
         "l ankle": "Left Ankle",
         "left ankle": "Left Ankle",
         "r ankle": "Right Ankle",
@@ -115,14 +203,14 @@ def normalize_joint_name(joint_name: str) -> str:
         "achilles tendon": "Achilles Tendon",
         
         # Hip variations
-        "hip": "Bilateral Hip",
+        "hip": "Other",
         "l hip": "Left Hip",
         "left hip": "Left Hip",
         "r hip": "Right Hip",
         "right hip": "Right Hip",
         
         # Shoulder variations
-        "shoulder": "Bilateral Shoulder",
+        "shoulder": "Other",
         "l shoulder": "Left Shoulder",
         "left shoulder": "Left Shoulder",
         "r shoulder": "Right Shoulder",
@@ -152,10 +240,23 @@ def normalize_joint_name(joint_name: str) -> str:
         "multiple": "Multiple",
     }
     
-    # Check for exact matches first
+    # Exact names first; generic substrings must not win over laterality.
     for key, standard in joint_mapping.items():
-        if key in joint_lower:
+        if joint_lower == key:
             return standard
+
+    # Explicit bilateral wording must be resolved before left/right checks.
+    has_left = "left" in joint_lower or "l " in joint_lower or joint_lower.startswith("l-")
+    has_right = "right" in joint_lower or "r " in joint_lower or joint_lower.startswith("r-")
+    if "bilateral" in joint_lower or "both" in joint_lower or (has_left and has_right):
+        if "knee" in joint_lower:
+            return "Bilateral Knee"
+        if "ankle" in joint_lower:
+            return "Bilateral Ankle"
+        if "hip" in joint_lower:
+            return "Bilateral Hip"
+        if "shoulder" in joint_lower:
+            return "Bilateral Shoulder"
     
     # Check if it contains side indicators
     if "left" in joint_lower or "l " in joint_lower:
@@ -178,8 +279,8 @@ def normalize_joint_name(joint_name: str) -> str:
         elif "shoulder" in joint_lower:
             return "Right Shoulder"
     
-    # If no match found, return as-is but capitalize properly
-    return joint_name.strip().title() if joint_name.strip() else "Other"
+    # Unspecified or unsupported joint values should not imply bilateral involvement.
+    return "Other"
 
 
 class JointSpecificGroup(BaseModel):
@@ -319,26 +420,6 @@ class DataQualityFlags(BaseModel):
     diagnosis_clear: bool = Field(description="Whether diagnosis is clear", default=False)
 
 
-class ExtractedFields(BaseModel):
-    """All extracted classification fields."""
-    provisional_diagnosis: ProvisionalDiagnosisExtraction
-    joint_mapping: JointMapping
-    clinical_stage: ClinicalStageExtraction
-    activity_profile: ActivityProfileExtraction
-    occupation: OccupationExtraction
-    pain_interference: PainInterferenceExtraction
-    pain_intensity_nprs: PainIntensityNPRS
-    intent: IntentExtraction
-
-
-class DataQualityFlags(BaseModel):
-    """Data quality and availability flags."""
-    nprs_available: bool = Field(description="Whether NPRS score is available", default=False)
-    occupation_available: bool = Field(description="Whether occupation data is available", default=False)
-    intent_clear: bool = Field(description="Whether intent is clearly stated", default=False)
-    diagnosis_clear: bool = Field(description="Whether diagnosis is clear", default=False)
-
-
 class TriageClassification(BaseModel):
     """Triage classification output with nested structure and validation."""
     patient_id: str = Field(description="Patient ID")
@@ -393,11 +474,14 @@ class TriageAgent:
                 project=self.project_id,
                 location=self.location
             )
-            self.model = "gemini-2.5-flash"
+            self.model = os.getenv("TRIAGE_MODEL", "gemini-2.5-flash")
+            self.fallback_model = os.getenv("TRIAGE_FALLBACK_MODEL") or None
             print(f"✅ Google GenAI Vertex AI client initialized")
             print(f"   Project: {self.project_id}")
             print(f"   Location: {self.location}")
             print(f"   Model: {self.model}")
+            if self.fallback_model:
+                print(f"   Fallback model: {self.fallback_model}")
         except Exception as e:
             print(f"❌ Failed to initialize Google GenAI Vertex AI: {e}")
             print(f"   Project: {self.project_id}")
@@ -602,37 +686,44 @@ Use the patient's actual text as evidence. Infer reasonable values when the reco
         # Check for side indicators first
         is_left = "left" in diagnosis_lower or "l " in diagnosis_lower or diagnosis_lower.startswith("l-")
         is_right = "right" in diagnosis_lower or "r " in diagnosis_lower or diagnosis_lower.startswith("r-")
-        
+        is_bilateral = "bilateral" in diagnosis_lower or "both" in diagnosis_lower or (is_left and is_right)
+
         # Extract joint type
         joint_type = None
         if "knee" in diagnosis_lower:
+            if is_bilateral:
+                return "Bilateral Knee"
             if is_left:
                 return "Left Knee"
-            elif is_right:
+            if is_right:
                 return "Right Knee"
-            else:
-                return "Bilateral Knee"
+            return "Other"
         elif "ankle" in diagnosis_lower or "achilles" in diagnosis_lower:
+            if "achilles" in diagnosis_lower and not (is_left or is_right or is_bilateral):
+                return "Achilles Tendon"
+            if is_bilateral:
+                return "Bilateral Ankle"
             if is_left:
                 return "Left Ankle"
-            elif is_right:
+            if is_right:
                 return "Right Ankle"
-            else:
-                return "Achilles Tendon" if "achilles" in diagnosis_lower else "Bilateral Ankle"
+            return "Other"
         elif "hip" in diagnosis_lower:
+            if is_bilateral:
+                return "Bilateral Hip"
             if is_left:
                 return "Left Hip"
-            elif is_right:
+            if is_right:
                 return "Right Hip"
-            else:
-                return "Bilateral Hip"
+            return "Other"
         elif "shoulder" in diagnosis_lower:
+            if is_bilateral:
+                return "Bilateral Shoulder"
             if is_left:
                 return "Left Shoulder"
-            elif is_right:
+            if is_right:
                 return "Right Shoulder"
-            else:
-                return "Bilateral Shoulder"
+            return "Other"
         elif "lumbar" in diagnosis_lower or "lower back" in diagnosis_lower:
             return "Lumbar Spine"
         elif "cervical" in diagnosis_lower or "neck" in diagnosis_lower:
@@ -703,13 +794,22 @@ Use the patient's actual text as evidence. Infer reasonable values when the reco
                 except:
                     record = {}
             
-            # Extract clinical history
-            clinical_history = record.get('clinical_history', '') or record.get('clinicalHistory', '')
+            # Extract clinical history from history fields only.
+            clinical_history = (
+                record.get('clinical_history', '')
+                or record.get('client_history', '')
+                or record.get('clinicalHistory', '')
+                or record.get('clientHistory', '')
+            )
             if not clinical_history:
-                raw_data = record.get('raw_data', {})
-                if raw_data:
-                    records = raw_data.get('records', {})
-                    clinical_history = records.get('clinicalDetails', {}).get('clinicalHistory', '')
+                raw_data = record.get('raw_data', {}) or {}
+                records = raw_data.get('records', {}) or {}
+                clinical_details = records.get('clinicalDetails', {}) or {}
+                clinical_history = (
+                    clinical_details.get('clientHistory', '')
+                    or clinical_details.get('clinicalHistory', '')
+                    or ''
+                )
             
             # Extract subjective notes
             subjective_notes = record.get('subjective_notes', '') or record.get('subjectiveNotes', '')
@@ -961,10 +1061,11 @@ Provide classification in this EXACT JSON structure:
         
         # Generate response
         response_text = ""
-        
+        # Select the primary model first; the fallback is optional and explicit.
+        model_to_use = self.model
         try:
             for chunk in self.client.models.generate_content_stream(
-                model=self.model,
+                model=model_to_use,
                 contents=contents,
                 config=config
             ):
@@ -978,7 +1079,7 @@ Provide classification in this EXACT JSON structure:
             error_msg = str(api_error)
             fallback_success = False
             
-            if ("404" in error_msg or "NOT_FOUND" in error_msg) and hasattr(self, 'fallback_model') and model_to_use == self.model:
+            if ("404" in error_msg or "NOT_FOUND" in error_msg) and self.fallback_model and model_to_use == self.model:
                 print(f"⚠️  {self.model} not accessible, trying fallback: {self.fallback_model}")
                 model_to_use = self.fallback_model
                 try:
@@ -1086,25 +1187,28 @@ Provide classification in this EXACT JSON structure:
             if 'patient_name' not in classification_dict:
                 classification_dict['patient_name'] = patient_name
             
-            # Ensure source_data exists and populate from input data
+            # Ensure source_data exists, then preserve each source field from
+            # its corresponding input field. Never substitute chief complaints
+            # for clinical history.
             if 'source_data' not in classification_dict:
                 classification_dict['source_data'] = {}
             source_data = classification_dict['source_data']
             if not source_data.get('provisional_diagnosis_raw'):
-                source_data['provisional_diagnosis_raw'] = diagnosis
+                source_data['provisional_diagnosis_raw'] = diagnosis or None
             if not source_data.get('chief_complaint'):
-                source_data['chief_complaint'] = complaints
+                source_data['chief_complaint'] = complaints or None
             if not source_data.get('clinical_history'):
-                source_data['clinical_history'] = complaints  # Use complaints as history if not provided
+                source_data['clinical_history'] = clinical_history or None
             if not source_data.get('subjective_notes'):
-                source_data['subjective_notes'] = None
+                source_data['subjective_notes'] = subjective_notes or None
             if not source_data.get('goals_raw'):
-                source_data['goals_raw'] = None
+                source_data['goals_raw'] = goals_raw or None
             
             # Ensure extracted_fields exists
             if 'extracted_fields' not in classification_dict:
                 raise ValueError("Missing 'extracted_fields' in LLM response")
             extracted = classification_dict['extracted_fields']
+            normalize_extracted_categories(extracted)
             
             # ------------------------------------------------------------------
             # Normalize list fields that the LLM may return as null instead of []
@@ -1371,13 +1475,20 @@ Provide classification in this EXACT JSON structure:
                         "canonical_diagnosis": "Unclear",
                         "updated_at": now,
                     }
+                    attempt_fields = {
+                        "attempt_status": "pending",
+                        "attempt_started_at": now,
+                        "attempt_completed_at": None,
+                        "attempt_error": None,
+                    }
 
                     ops.append(
                         UpdateOne(
                             {"patient_id": patient_id_for_query},
                             {
-                                # Only create skeleton on first insert; full classifications
-                                # written later will overwrite these fields via $set.
+                                # Update only the current attempt metadata. Existing
+                                # successful classification fields remain untouched.
+                                "$set": attempt_fields,
                                 "$setOnInsert": {**base_doc, "created_at": now},
                             },
                             upsert=True,
@@ -1390,10 +1501,44 @@ Provide classification in this EXACT JSON structure:
             except Exception as e:
                 print(f"⚠️  Could not initialize skeleton classification documents in MongoDB: {e}")
 
-        # Track which patients have been saved to avoid re-saving
+            # Track which patients have been saved to avoid re-saving
         saved_patient_ids: set = set()
+        persistence_failed_ids: set = set()
+        persistence_errors: Dict[str, str] = {}
+        classification_failed_ids: set = set()
+        failure_errors: Dict[str, str] = {}
         save_lock = threading.Lock()
-        
+
+        def mark_persistence_failure(patient_ids: List[str], error: Exception) -> None:
+            """Record persistence failures so the run cannot report false success."""
+            message = str(error)
+            for patient_id in patient_ids:
+                persistence_failed_ids.add(str(patient_id))
+                persistence_errors[str(patient_id)] = message
+
+        def mark_failed_attempts() -> None:
+            """Persist failed attempt metadata without replacing successful results."""
+            if mongo_collection is None:
+                return
+            failed_errors = {**failure_errors, **persistence_errors}
+            for patient_id, error in failed_errors.items():
+                try:
+                    from bson import ObjectId
+                    try:
+                        query_id = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
+                    except (ValueError, TypeError):
+                        query_id = patient_id
+                    mongo_collection.update_one(
+                        {"patient_id": query_id},
+                        {"$set": {
+                            "attempt_status": "failed",
+                            "attempt_completed_at": datetime.utcnow(),
+                            "attempt_error": str(error),
+                        }},
+                    )
+                except Exception as tracking_error:
+                    print(f"⚠️  Could not record failed attempt for {patient_id}: {tracking_error}")
+
         def save_classifications_incremental(classifications_list: List[TriageClassification], force: bool = False, batch_size: int = 10):
             """
             Thread-safe function to save classifications incrementally.
@@ -1465,9 +1610,13 @@ Provide classification in this EXACT JSON structure:
                                 print(f"⚠️  Warning: patient_id '{patient_id}' is not a valid ObjectId, storing as string")
                                 patient_id_for_query = patient_id
                             
-                            # Mark as completed classification
+                            # Mark the last successful classification and the
+                            # current attempt separately.
                             doc["status"] = "completed"
                             doc["updated_at"] = now
+                            doc["attempt_status"] = "completed"
+                            doc["attempt_completed_at"] = now
+                            doc["attempt_error"] = None
                             # created_at only set on first insert
                             bulk_ops.append(
                                 UpdateOne(
@@ -1488,7 +1637,14 @@ Provide classification in this EXACT JSON structure:
                                 if force or len(bulk_ops) >= batch_size:
                                     print(f"💾 Upserted {len(bulk_ops)} new classifications into MongoDB (total saved: {len(saved_patient_ids)})")
                     except Exception as e:
+                        failed_ids = [str(cls.patient_id) for cls in new_classifications]
+                        mark_persistence_failure(failed_ids, e)
                         print(f"⚠️  Error saving classifications to MongoDB: {e}")
+                else:
+                    error = RuntimeError("MongoDB classification collection is unavailable")
+                    failed_ids = [str(cls.patient_id) for cls in new_classifications]
+                    mark_persistence_failure(failed_ids, error)
+                    print("⚠️  Cannot save classifications: MongoDB collection is unavailable")
 
         
         def classify_single_patient(patient: Dict[str, Any], index: int) -> Optional[TriageClassification]:
@@ -1528,6 +1684,8 @@ Provide classification in this EXACT JSON structure:
                 
             except PermissionError as e:
                 # Permission errors should stop the pipeline
+                classification_failed_ids.add(str(patient_id))
+                failure_errors[str(patient_id)] = str(e)
                 print(f"\n❌ Stopping pipeline due to permission error for {patient_name}: {e}")
                 if update_progress:
                     try:
@@ -1538,6 +1696,8 @@ Provide classification in this EXACT JSON structure:
                         pass
                 raise
             except Exception as e:
+                classification_failed_ids.add(str(patient_id))
+                failure_errors[str(patient_id)] = str(e)
                 print(f"❌ Error classifying patient {patient_name} ({patient_id}): {e}")
                 # Update progress even on error
                 if update_progress and increment_progress:
@@ -1595,6 +1755,10 @@ Provide classification in this EXACT JSON structure:
             # Save any remaining classifications that haven't been saved yet
             if classifications:
                 save_classifications_incremental(classifications, force=True, batch_size=1)
+
+            # Persist per-patient failed attempt metadata while preserving any
+            # previous successful classification result.
+            mark_failed_attempts()
             
             # Clean up Mongo client if we created one
             if mongo_client is not None:
@@ -1604,16 +1768,45 @@ Provide classification in this EXACT JSON structure:
                 except Exception:
                     pass
         
-        # Mark as completed
+        # Final status reflects persisted results, not just in-memory classifications.
+        failed_ids = sorted(classification_failed_ids | persistence_failed_ids)
+        saved_count = len(saved_patient_ids)
+        all_errors = {**failure_errors, **persistence_errors}
+
         if update_progress:
             try:
                 from api.progress_tracker import set_progress
-                set_progress("completed", len(classifications), total_patients)
+                if failed_ids:
+                    set_progress(
+                        "error",
+                        saved_count,
+                        total_patients,
+                        error=f"{len(failed_ids)} of {total_patients} patients failed classification or persistence",
+                        message=f"Completed with {len(failed_ids)} failure(s); {saved_count} saved",
+                        saved=saved_count,
+                        failed=len(failed_ids),
+                        failed_patient_ids=failed_ids,
+                        persistence_errors=all_errors,
+                    )
+                else:
+                    set_progress(
+                        "completed",
+                        saved_count,
+                        total_patients,
+                        message=f"Completed; {saved_count} saved",
+                        saved=saved_count,
+                        failed=0,
+                        failed_patient_ids=[],
+                        persistence_errors={},
+                    )
             except Exception:
                 pass
-        
-        print(f"\n✅ Completed classification of {len(classifications)}/{total_patients} patients")
-        print(f"💾 Total classifications saved to MongoDB: {len(saved_patient_ids)}")
+
+        if failed_ids:
+            print(f"\n⚠️  Completed with errors: {saved_count}/{total_patients} patients saved; {len(failed_ids)} failed")
+        else:
+            print(f"\n✅ Completed classification of {saved_count}/{total_patients} patients")
+        print(f"💾 Total classifications saved to MongoDB: {saved_count}")
         return classifications
     
     def run_triage_pipeline(
