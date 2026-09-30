@@ -64,3 +64,4 @@ deploy/*.pem
 
 # Backup/duplicate files
 *[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9].py
+.env.dev
