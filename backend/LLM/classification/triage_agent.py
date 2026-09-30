@@ -149,7 +149,11 @@ def normalize_extracted_categories(extracted: Dict[str, Any]) -> None:
 
     pain = extracted.setdefault("pain_interference", {})
     pain["category"] = _normalize_category(pain.get("category"), PAIN_INTERFERENCE_CATEGORIES, "pain interference", {
-        "no_minimal_interference": "no_interference", "activity_only_interference": "activity_interference", "work_daily_function_interference": "work_interference"
+        "no_minimal_interference": "no_interference",
+        "activity_only_interference": "activity_interference",
+        "work_daily_function_interference": "work_interference",
+        "multi_domain_interference": "multi_domain",
+        "forced_entry_surgery_or_trauma": "forced_entry",
     })
     pain["confidence"] = _normalize_category(pain.get("confidence"), CONFIDENCE_VALUES, "pain confidence")
 
@@ -1193,16 +1197,13 @@ Provide classification in this EXACT JSON structure:
             if 'source_data' not in classification_dict:
                 classification_dict['source_data'] = {}
             source_data = classification_dict['source_data']
-            if not source_data.get('provisional_diagnosis_raw'):
-                source_data['provisional_diagnosis_raw'] = diagnosis or None
-            if not source_data.get('chief_complaint'):
-                source_data['chief_complaint'] = complaints or None
-            if not source_data.get('clinical_history'):
-                source_data['clinical_history'] = clinical_history or None
-            if not source_data.get('subjective_notes'):
-                source_data['subjective_notes'] = subjective_notes or None
-            if not source_data.get('goals_raw'):
-                source_data['goals_raw'] = goals_raw or None
+            # Original extracted inputs are authoritative. Always overwrite any
+            # AI-returned source text so provenance cannot be corrupted.
+            source_data['provisional_diagnosis_raw'] = diagnosis or None
+            source_data['chief_complaint'] = complaints or None
+            source_data['clinical_history'] = clinical_history or None
+            source_data['subjective_notes'] = subjective_notes or None
+            source_data['goals_raw'] = goals_raw or None
             
             # Ensure extracted_fields exists
             if 'extracted_fields' not in classification_dict:
@@ -1630,9 +1631,13 @@ Provide classification in this EXACT JSON structure:
                             # Only save if we have enough new items OR if forced
                             if len(bulk_ops) >= batch_size or force:
                                 mongo_collection.bulk_write(bulk_ops, ordered=False)
-                                # Mark these as saved
+                                # Mark these as saved and clear any previous
+                                # persistence failure from an earlier retry.
                                 for cls in new_classifications:
+                                    patient_key = str(cls.patient_id)
                                     saved_patient_ids.add(cls.patient_id)
+                                    persistence_failed_ids.discard(patient_key)
+                                    persistence_errors.pop(patient_key, None)
                                 
                                 if force or len(bulk_ops) >= batch_size:
                                     print(f"💾 Upserted {len(bulk_ops)} new classifications into MongoDB (total saved: {len(saved_patient_ids)})")

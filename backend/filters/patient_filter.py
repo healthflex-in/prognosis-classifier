@@ -109,7 +109,10 @@ class PatientFilter:
         if sufficiency.get("is_sufficient") is not True:
             return None
 
-        if self._timestamp(prognosis.get("updated_at")) is None:
+        prognosis_timestamp = self._timestamp(prognosis.get("updated_at"))
+        if prognosis_timestamp is None:
+            return None
+        if self.cutoff_timestamp is not None and prognosis_timestamp < self.cutoff_timestamp:
             return None
 
         return prognosis
