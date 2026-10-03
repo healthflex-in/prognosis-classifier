@@ -2,7 +2,7 @@
 Pydantic models for API responses.
 """
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from enum import Enum
 
 
@@ -217,7 +217,18 @@ class PatientMasterView(BaseModel):
     
     # Step 9: Intent
     intentCategory: Optional[IntentCategory] = None
-    
+
+    # Classification provenance and processing status
+    status: Optional[str] = None
+    attempt_status: Optional[str] = None
+    attempt_error: Optional[str] = None
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+    attempt_started_at: Optional[Any] = None
+    attempt_completed_at: Optional[Any] = None
+    source_data: Optional[Dict[str, Any]] = None
+    extracted_fields: Optional[Dict[str, Any]] = None
+    data_quality_flags: Optional[Dict[str, Any]] = None
 
 
 # Stats models for new classification

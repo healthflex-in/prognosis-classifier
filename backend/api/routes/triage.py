@@ -1,7 +1,7 @@
 """
 Triage agent endpoint to trigger classification pipeline.
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, status
 from typing import Optional
 from pydantic import BaseModel
 import sys
@@ -31,10 +31,10 @@ def run_triage_agent(months_back: int = 5, limit: Optional[int] = None, patient_
     """
     try:
         from LLM.classification.triage_agent import TriageAgent
-        from api.progress_tracker import set_progress, reset_progress
+        from api.progress_tracker import set_progress
 
-        # Reset progress before starting
-        reset_progress()
+        # The API claims the run before scheduling this task. Do not reset the
+        # progress file here because doing so would erase the atomic claim.
         set_progress("running", 0, 0, message="Starting triage...")
         
         agent = TriageAgent()
@@ -89,6 +89,15 @@ async def run_triage(
         # If months_back is not provided or 0, use None to mean "all time periods" (no date limit)
         months_back_value = request.months_back if request.months_back is not None and request.months_back > 0 else None
         
+        # Reserve the run before adding the background task. This prevents a
+        # second client/request from starting an overlapping triage job.
+        from api.progress_tracker import claim_run
+        if not claim_run():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A triage run is already starting or running.",
+            )
+
         background_tasks.add_task(
             run_triage_agent,
             months_back=months_back_value,

@@ -79,10 +79,15 @@ def _load_classifications_from_mongo() -> List[Dict[str, Any]]:
             "status": 1,
             "created_at": 1,
             "updated_at": 1,
+            "attempt_started_at": 1,
+            "attempt_completed_at": 1,
+            "attempt_status": 1,
+            "attempt_error": 1,
             "canonical_diagnosis": 1,
             "provisional_diagnosis": 1,
             "extracted_fields": 1,
             "source_data": 1,
+            "data_quality_flags": 1,
         }
 
         cursor = collection.find(query, projection=projection).batch_size(500)
@@ -401,7 +406,17 @@ def transform_to_master_view(classification: Dict[str, Any]) -> PatientMasterVie
         intentCategory=intent_category,
         strengthAsymmetry=classification.get('strength_asymmetry_percent') or classification.get('strengthAsymmetry'),
         absoluteForceLevel=classification.get('absolute_force_level') or classification.get('absoluteForceLevel'),
-        romAsymmetryDegrees=classification.get('rom_asymmetry_degrees') or classification.get('romAsymmetryDegrees')
+        romAsymmetryDegrees=classification.get('rom_asymmetry_degrees') or classification.get('romAsymmetryDegrees'),
+        status=classification.get('status'),
+        attempt_status=classification.get('attempt_status'),
+        attempt_error=classification.get('attempt_error'),
+        created_at=classification.get('created_at'),
+        updated_at=classification.get('updated_at'),
+        attempt_started_at=classification.get('attempt_started_at'),
+        attempt_completed_at=classification.get('attempt_completed_at'),
+        source_data=classification.get('source_data'),
+        extracted_fields=classification.get('extracted_fields'),
+        data_quality_flags=classification.get('data_quality_flags'),
     )
 
 
