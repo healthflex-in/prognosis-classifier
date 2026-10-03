@@ -1631,6 +1631,13 @@ Provide classification in this EXACT JSON structure:
                             # Only save if we have enough new items OR if forced
                             if len(bulk_ops) >= batch_size or force:
                                 mongo_collection.bulk_write(bulk_ops, ordered=False)
+                                # Invalidate the API's in-memory patient view so the next
+                                # request sees classifications saved by this batch.
+                                try:
+                                    from api.data_loader import clear_patient_cache
+                                    clear_patient_cache()
+                                except Exception as cache_error:
+                                    print(f"⚠️  Could not clear patient cache after save: {cache_error}")
                                 # Mark these as saved and clear any previous
                                 # persistence failure from an earlier retry.
                                 for cls in new_classifications:
