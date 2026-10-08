@@ -2,7 +2,7 @@
 """
 Recommendation Agent
 Generates two patient-facing retention fields from a completed first-assessment report:
-  - top_3_action_areas: 3 action-oriented priority phrases (max 35 characters each)
+  - top_3_action_areas: 3 action-oriented priority phrases (max 40 characters each)
   - next_session_plan:  1-2 short patient-friendly sentences (max 90 chars) describing next steps
 """
 
@@ -11,29 +11,19 @@ import os
 import re
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_vertexai import ChatVertexAI
-from pydantic import BaseModel, Field
+from pydantic import ValidationError
+from utils.recommendation_output import RecommendationOutput
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_google_vertexai")
 
 backend_env = Path(__file__).parent.parent.parent / ".env"
 if backend_env.exists():
     load_dotenv(backend_env)
-
-
-# ── Output schema ─────────────────────────────────────────────────────────────
-
-class RecommendationOutput(BaseModel):
-    top_3_action_areas: List[str] = Field(
-        description="Exactly 3 action-oriented priority areas (max 35 characters each)"
-    )
-    next_session_plan: str = Field(
-        description="Max 90 characters, 1-2 sentences, patient-friendly, forward-looking"
-    )
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -51,13 +41,16 @@ CORE RULES:
 - Write in the clinician's voice, speaking to the patient directly — reassuring, but never promising outcomes or guarantees.
 - Remove all unnecessary medical jargon. Diagnoses, special test names, and imaging findings must be translated into plain, functional, everyday language.
 - Simple English only. Assume no medical background.
+- Write complete words and complete thoughts. Never shorten text by cutting a word or sentence.
+- If text is too long, rewrite it more concisely while preserving the clinical meaning and side of the body. Do not use R/L abbreviations to fit.
 
 SPECIFICITY REQUIREMENT — THIS IS THE MOST IMPORTANT RULE:
 Every concern and the session plan MUST be specific to THIS patient's actual data. You must name the exact body part, movement, activity, or limitation that appears in the assessment. Generic phrases like "Improve strength and function", "Reduce pain and improve daily movement", or "Build tolerance to activity" are STRICTLY FORBIDDEN — they could apply to any patient and add zero value. If you catch yourself writing something that could apply to any random patient, rewrite it using the specific body part, sport, activity, limitation, or goal mentioned in THIS assessment.
 
 FIELD 1 — top_3_action_areas:
 - Return EXACTLY 3 items.
-- Each item MUST be 35 characters or fewer (hard limit — count every character including spaces).
+- Each item MUST be 40 characters or fewer (hard limit — count every character including spaces).
+- Use a complete, concise action phrase. Prefer 25–35 characters to leave space; never return a fragment cut from a longer phrase.
 - Each item MUST name the specific body region, movement pattern, or activity from this patient's assessment (e.g. "knee", "shoulder", "running", "sitting tolerance", "overhead reach", "stair descent", "throwing").
 - Phrase each as an action or improvement area — NEVER as a diagnosis, test result, or clinical label.
   - Good: "Knee strength for stair climbing", "Pain-free shoulder overhead reach", "Build running distance gradually", "Reduce neck stiffness at desk"
@@ -69,6 +62,7 @@ FIELD 1 — top_3_action_areas:
 
 FIELD 2 — next_session_plan:
 - Maximum 90 characters. 1–2 short sentences maximum. Be concise.
+- Prefer one complete sentence of 60–80 characters. End with sentence punctuation. Never end with an unfinished thought such as "strengthening for" or a cut word such as "exerc".
 - Must reference something specific from this patient's assessment — the affected body area, a specific movement goal, or a treatment approach directly relevant to their complaint.
 - Describe what will actually happen next session — forward-looking, not a summary of findings.
 - Use patient-friendly language only.
@@ -89,9 +83,9 @@ If the assessment lacks enough detail, use the most conservative phrasing that i
 Respond with this exact JSON structure:
 {
   "top_3_action_areas": [
-    "string — max 35 chars, specific to this patient's complaint/body area",
-    "string — max 35 chars, specific to this patient's findings/goals",
-    "string — max 35 chars, specific to this patient's functional limitation"
+    "string — max 40 chars, specific to this patient's complaint/body area",
+    "string — max 40 chars, specific to this patient's findings/goals",
+    "string — max 40 chars, specific to this patient's functional limitation"
   ],
   "next_session_plan": "string — max 90 characters, specific to this patient, forward-looking"
 }"""
@@ -236,29 +230,37 @@ class RecommendationAgent:
             HumanMessage(content=user_prompt),
         ]
 
-        try:
-            response = self.llm.invoke(messages)
-            raw = response.content.strip()
-            data = json.loads(_clean_json(raw))
-            areas = data.get("top_3_action_areas", [])
-            if len(areas) < 3:
-                areas += ["Continue with your rehabilitation programme"] * (3 - len(areas))
-            return RecommendationOutput(
-                top_3_action_areas=[a[:35] for a in areas[:3]],
-                next_session_plan=(data.get("next_session_plan") or "")[:90],
-            )
-        except Exception as e:
-            import traceback
-            print(f"⚠️  RecommendationAgent LLM failed: {e}")
-            traceback.print_exc()
-            return self._fallback(patient_data)
-
-    def _fallback(self, patient_data: Dict[str, Any]) -> RecommendationOutput:
-        return RecommendationOutput(
-            top_3_action_areas=[
-                "Reduce pain and restore comfortable movement",
-                "Improve strength and physical function",
-                "Build tolerance to activity and daily tasks",
-            ],
-            next_session_plan="We will begin hands-on treatment and targeted exercises in your next session.",
-        )
+        # One bounded rewrite: valid responses need only the original call.
+        for attempt in range(2):
+            try:
+                response = self.llm.invoke(messages)
+            except Exception as error:
+                raise RuntimeError("Recommendation generation failed. Please try again.") from error
+            raw = response.content
+            try:
+                if not isinstance(raw, str):
+                    raise ValueError("Return a single JSON object as text")
+                return RecommendationOutput.model_validate(json.loads(_clean_json(raw)))
+            except (ValueError, TypeError) as error:
+                if attempt == 1:
+                    break
+                if isinstance(error, ValidationError):
+                    issues = "; ".join(
+                        f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
+                        for item in error.errors(include_input=False, include_url=False)
+                    )
+                else:
+                    issues = "Return valid JSON with the required fields and string values."
+                if isinstance(raw, str):
+                    messages.append(AIMessage(content=raw))
+                messages.append(HumanMessage(content=(
+                    f"Rewrite the response to correct these validation issues: {issues}\n"
+                    "Return exactly 3 distinct, complete action phrases, each at most 40 characters, "
+                    "and a complete next-session sentence at most 90 characters, including spaces "
+                    "and punctuation. Use shorter wording, never cut words or unfinished sentences. "
+                    "Preserve the original assessment's meaning, body area and laterality. "
+                    "Do not invent treatment details. Return only the full corrected JSON object."
+                )))
+        # Never save a truncated response or disguise an AI failure as a generic
+        # patient recommendation. Existing routes surface this error to the UI.
+        raise RuntimeError("Could not generate complete recommendations within the character limits. Please try again.")

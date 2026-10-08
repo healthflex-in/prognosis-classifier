@@ -15,6 +15,7 @@ from api.routes import patients, stats, performance, matrix, triage, clinical, c
 from api.websocket_manager import websocket_endpoint
 from api.queue_manager import PrognosisQueue
 from api.scheduler import setup_scheduler
+from utils.recommendation_output import valid_cached_recommendation
 from LLM.prognosis.push_prognosis_to_mongo import save_to_mongo, build_patient_data_from_reports
 from api.routes.recommendation import build_recommendation_input, save_recommendation
 
@@ -265,7 +266,7 @@ async def websocket_recommendation(websocket: WebSocket):
         rec_doc = await asyncio.to_thread(
             lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
         )
-        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash:
+        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash and valid_cached_recommendation(rec_doc):
             print(f"⚡ /ws/recommendation: hash unchanged for {patient_id}, returning cache")
             await websocket.send_json({
                 "top_3_action_areas": rec_doc["top_3_action_areas"],

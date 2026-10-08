@@ -1,0 +1,10 @@
+.env
+.env.*
+stance-ai-*.json
+aaa.json
+*.pem
+__pycache__/
+*.pyc
+.venv/
+venv/
+.git/

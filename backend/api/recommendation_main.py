@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.routes import recommendation, partial_reports
+from utils.recommendation_output import valid_cached_recommendation
 
 app = FastAPI(
     title="Recommendation Service",
@@ -75,7 +76,7 @@ async def websocket_recommendation(websocket: WebSocket):
         rec_doc = await asyncio.to_thread(
             lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
         )
-        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash:
+        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash and valid_cached_recommendation(rec_doc):
             await websocket.send_json({
                 "top_3_action_areas": rec_doc["top_3_action_areas"],
                 "next_session_plan":  rec_doc["next_session_plan"],
