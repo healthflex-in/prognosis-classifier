@@ -91,7 +91,11 @@ def set_progress(
     total: int = 0,
     error: Optional[str] = None,
     message: Optional[str] = None,
-    output_file: Optional[str] = None
+    output_file: Optional[str] = None,
+    saved: Optional[int] = None,
+    failed: Optional[int] = None,
+    failed_patient_ids: Optional[list] = None,
+    persistence_errors: Optional[Dict[str, str]] = None,
 ):
     """
     Update progress in file (thread-safe).
@@ -131,6 +135,20 @@ def set_progress(
         # Preserve output_file if not explicitly set
         if output_file is None and existing.get("output_file"):
             progress["output_file"] = existing.get("output_file")
+
+        # Track persistence outcomes separately from classification progress.
+        progress["saved"] = saved if saved is not None else existing.get("saved", 0)
+        progress["failed"] = failed if failed is not None else existing.get("failed", 0)
+        progress["failed_patient_ids"] = (
+            list(failed_patient_ids)
+            if failed_patient_ids is not None
+            else existing.get("failed_patient_ids", [])
+        )
+        progress["persistence_errors"] = (
+            dict(persistence_errors)
+            if persistence_errors is not None
+            else existing.get("persistence_errors", {})
+        )
         
         # Ensure directory exists
         PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -183,3 +201,40 @@ def increment_progress(total: int):
 def reset_progress():
     """Reset progress to idle state."""
     set_progress("idle", 0, 0)
+
+
+def claim_run(message: str = "Triage run queued") -> bool:
+    """Atomically claim the triage runner for a new background job.
+
+    Returns False when another process/thread has already reserved or is
+    executing a run. The starting state is written before the background
+    task is scheduled so two API requests cannot both pass the guard.
+    """
+    with _progress_lock:
+        existing = _get_progress_internal()
+        if existing.get("status") in {"starting", "running"}:
+            return False
+
+        now = datetime.now().isoformat()
+        progress = {
+            "status": "starting",
+            "current": 0,
+            "total": 0,
+            "started_at": now,
+            "completed_at": None,
+            "error": None,
+            "message": message,
+            "output_file": None,
+            "saved": 0,
+            "failed": 0,
+            "failed_patient_ids": [],
+            "persistence_errors": {},
+        }
+        PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(PROGRESS_FILE, "w") as f:
+                json.dump(progress, f, indent=2)
+        except Exception as e:
+            print(f"Error claiming triage run: {e}")
+            return False
+        return True
