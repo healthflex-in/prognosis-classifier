@@ -65,8 +65,8 @@ class MongoReportsLoader:
         try:
             from bson import ObjectId
             
-            # Query the structured_user_reports_materialized collection
-            collection = self.db['structured_user_reports_materialized']
+            # Query the structured-user-reports view
+            collection = self.db['structured-user-reports']
             
             # Try to convert patient_id to ObjectId if it looks like one
             query_id = patient_id
@@ -212,7 +212,7 @@ class MongoReportsLoader:
             List of patient summaries
         """
         try:
-            collection = self.db['structured_user_reports_materialized']
+            collection = self.db['structured-user-reports']
             
             # Get total count first (for progress tracking)
             total_count = None
@@ -374,8 +374,8 @@ class MongoReportsLoader:
         try:
             from bson import ObjectId
             
-            # Query the structured_user_reports_materialized collection
-            collection = self.db['structured_user_reports_materialized']
+            # Query the structured-user-reports view
+            collection = self.db['structured-user-reports']
             
             # Try to convert patient_id to ObjectId if it looks like one
             query_id = patient_id
@@ -521,7 +521,7 @@ class MongoReportsLoader:
             List of patient summaries
         """
         try:
-            collection = self.db['structured_user_reports_materialized']
+            collection = self.db['structured-user-reports']
             
             # Get total count first (for progress tracking)
             total_count = None
