@@ -9,7 +9,7 @@ def check_patient():
     db = client["stance-dashboard"]
 
     patient_id = "6a02da4701012c75bf7fda03"
-    doc = db["structured-user-reports"].find_one({"patient_id": patient_id})
+    doc = db["structured_user_reports_materialized"].find_one({"patient_id": patient_id})
 
     if doc:
         print(f"Found document for patient {patient_id}")
@@ -23,12 +23,12 @@ def check_patient():
     else:
         # Let's try to find any document to see the structure
         print(f"Patient {patient_id} not found. Checking one random document...")
-        sample = db["structured-user-reports"].find_one()
+        sample = db["structured_user_reports_materialized"].find_one()
         if sample:
             print("Sample document structure:")
             print(json.dumps(sample, indent=2, default=json_util.default))
         else:
-            print("Collection 'structured-user-reports' is empty or missing.")
+            print("Collection 'structured_user_reports_materialized' is empty or missing.")
 
 if __name__ == "__main__":
     check_patient()

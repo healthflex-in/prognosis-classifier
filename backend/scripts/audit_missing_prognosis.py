@@ -19,8 +19,8 @@ def audit():
     collections = db.list_collection_names()
 
     # 1. Get all patients who have clinical reports
-    print("\nChecking 'structured-user-reports' for patients...")
-    cursor = db["structured-user-reports"].find({}, {"patient_id": 1, "reports": 1})
+    print("\nChecking 'structured_user_reports_materialized' for patients...")
+    cursor = db["structured_user_reports_materialized"].find({}, {"patient_id": 1, "reports": 1})
     first_assessment_patients = {}
     for doc in cursor:
         pid = str(doc.get("patient_id"))
