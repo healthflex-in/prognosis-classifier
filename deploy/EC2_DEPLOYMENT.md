@@ -1,5 +1,8 @@
 # EC2 Deployment Guide for Prognosis Classifier
 
+For the current Docker/Caddy deployment, use [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md).
+The instructions below describe the legacy systemd/nginx installation.
+
 This guide walks you through deploying both the frontend and backend to a single EC2 instance.
 
 ## Prerequisites

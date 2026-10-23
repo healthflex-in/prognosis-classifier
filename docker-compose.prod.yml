@@ -1,0 +1,53 @@
+# Production only. Run: docker compose -f docker-compose.prod.yml up -d
+services:
+  # ─── PROD (ports 8015/8016, prod MongoDB) ─────────────────────────────────
+  backend-prod:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.prod
+    container_name: prognosis-backend-prod
+    ports:
+      - "8015:8013"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${PROD_GOOGLE_CREDENTIALS_FILE:-./backend/stance-ai-8919b7295fb6.json}
+        target: /app/stance-ai-8919b7295fb6.json
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8013/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  recommendation-prod:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.prod
+    container_name: recommendation-service-prod
+    ports:
+      - "8016:8014"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${PROD_GOOGLE_CREDENTIALS_FILE:-./backend/stance-ai-8919b7295fb6.json}
+        target: /app/stance-ai-8919b7295fb6.json
+        read_only: true
+        bind:
+          create_host_path: false
+    command: uvicorn api.recommendation_main:app --host 0.0.0.0 --port 8014
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8014/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
