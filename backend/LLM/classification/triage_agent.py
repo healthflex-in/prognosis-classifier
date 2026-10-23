@@ -821,7 +821,9 @@ Use the patient's actual text as evidence. Infer reasonable values when the reco
                 raw_data = record.get('raw_data', {})
                 if raw_data:
                     records = raw_data.get('records', {})
-                    subjective_notes = records.get('subjectiveAssessment', {}).get('notes', '')
+                    subjective = records.get('subjectiveAssessment', {}) or {}
+                    # Reports store the subjective text under 'assessment'; 'notes' is legacy
+                    subjective_notes = subjective.get('notes', '') or subjective.get('assessment', '')
             
             # Extract goals
             goals_raw = record.get('goals', '') or record.get('goals_raw', '')
