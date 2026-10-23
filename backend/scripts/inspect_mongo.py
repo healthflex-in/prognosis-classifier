@@ -17,7 +17,7 @@ def inspect():
     print(f"Collections: {db.list_collection_names()}")
 
     # Sample some collections
-    for coll in ["structured-user-reports", "classification", "prognosis", "patient-metadata"]:
+    for coll in ["structured_user_reports_materialized", "classification", "prognosis", "patient-metadata"]:
         if coll in db.list_collection_names():
             count = db[coll].count_documents({})
             print(f"  - {coll}: {count} docs")

@@ -37,11 +37,11 @@ async def scan_for_new_assessments():
         start_ms = start_of_yesterday.timestamp() * 1000
         end_ms = end_of_yesterday.timestamp() * 1000
 
-        logger.info(f"Scanning 'structured-user-reports' for timeframe (ms): {start_ms} to {end_ms}")
+        logger.info(f"Scanning 'structured_user_reports_materialized' for timeframe (ms): {start_ms} to {end_ms}")
 
         # 2. Get all patients who have clinical reports from yesterday
         # We query the view for any report updated or created yesterday
-        cursor = db["structured-user-reports"].find({
+        cursor = db["structured_user_reports_materialized"].find({
             "reports.event_start_time": {
                 "$gte": start_ms,
                 "$lte": end_ms
