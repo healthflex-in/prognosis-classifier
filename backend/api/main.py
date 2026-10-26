@@ -3,6 +3,8 @@ FastAPI backend for Clinical Dashboard.
 Serves triage and clinical LLM data to the frontend (HTTP + WebSocket).
 """
 import asyncio
+import time
+import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -15,8 +17,8 @@ from api.routes import patients, stats, performance, matrix, triage, clinical, c
 from api.websocket_manager import websocket_endpoint
 from api.queue_manager import PrognosisQueue
 from api.scheduler import setup_scheduler
-from utils.recommendation_output import valid_cached_recommendation
 from LLM.prognosis.push_prognosis_to_mongo import save_to_mongo, build_patient_data_from_reports
+from utils.recommendation_output import valid_cached_recommendation
 from api.routes.recommendation import build_recommendation_input, save_recommendation
 
 app = FastAPI(
@@ -115,6 +117,10 @@ async def startup_event():
     # Setup daily prognosis scheduler
     setup_scheduler()
 
+    # Pay the recommendation cold-start costs now instead of on the first click.
+    from services.recommendation_warmup import warm_recommendation_path
+    asyncio.get_running_loop().run_in_executor(None, lambda: warm_recommendation_path(force=True))
+
     import os
     auto_start = os.getenv("AUTO_START_CHANGE_STREAM", "false").lower() == "true"
     
@@ -141,6 +147,18 @@ async def shutdown_event():
         print("✅ Change stream listener stopped on shutdown")
     except Exception as e:
         print(f"⚠️  Error stopping change stream listener: {e}")
+
+
+def _log_timing(endpoint, correlation_id, stage, started, **fields):
+    """Emit safe timing data without allowing logging failures to affect requests."""
+    try:
+        details = " ".join(f"{key}={value}" for key, value in fields.items())
+        print(
+            f"[timing] endpoint={endpoint} correlation_id={correlation_id} stage={stage} "
+            f"duration_ms={(time.monotonic() - started) * 1000:.1f} {details}".rstrip()
+        )
+    except Exception:
+        pass
 
 
 @app.websocket("/ws/query")
@@ -220,20 +238,14 @@ async def websocket_manual_prognosis(websocket: WebSocket):
 
 @app.websocket("/ws/recommendation")
 async def websocket_recommendation(websocket: WebSocket):
-    """
-    Recommendation trigger over WebSocket with hash-based cache.
-
-    Protocol:
-      1. Client connects, sends JSON: {"patient_id": "<id>"}
-      2. Server checks if partial-reports hash matches last generated hash
-         → if unchanged: returns cached result immediately (no LLM call)
-         → if changed:   builds patient data, merges partial-report fields,
-                         runs LLM, saves with new hash, returns result
-      3. Server closes the connection
-    """
+    endpoint = "/ws/recommendation"
+    correlation_id = uuid.uuid4().hex[:12]
+    request_started = time.monotonic()
     await websocket.accept()
     try:
         msg = await websocket.receive_json()
+        correlation_id = str(msg.get("request_id") or correlation_id)
+        _log_timing(endpoint, correlation_id, "request_start", request_started)
         patient_id = msg.get("patient_id")
         if not patient_id:
             await websocket.send_json({"error": "patient_id is required"})
@@ -242,50 +254,72 @@ async def websocket_recommendation(websocket: WebSocket):
 
         from utils.mongo_connection import get_mongo_db
         from bson import ObjectId
+        mongo_started = time.monotonic()
         _, db = await asyncio.to_thread(get_mongo_db)
-
         try:
             pid_obj = ObjectId(patient_id) if len(str(patient_id)) == 24 else patient_id
         except Exception:
             pid_obj = patient_id
-
-        # ── 1. Load partial-report (written by frontend just before connecting) ─
-        partial = await asyncio.to_thread(
-            lambda: db["partial-reports"].find_one({"patient_id": pid_obj})
-        )
+        # A draft sent inline spares the wait for the draft POST to be stored; clients
+        # that do not send one keep reading the stored draft as before.
+        inline_draft = msg.get("draft")
+        if isinstance(inline_draft, dict):
+            from api.routes.partial_reports import build_inline_partial
+            try:
+                partial = build_inline_partial(inline_draft)
+            except ValueError as error:
+                await websocket.send_json({"error": "Assessment draft is incomplete or invalid. Please check the form and generate again."})
+                await websocket.close()
+                return
+            rec_doc = await asyncio.to_thread(
+                lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
+            )
+        else:
+            partial, rec_doc = await asyncio.gather(
+                asyncio.to_thread(lambda: db["partial-reports"].find_one({"patient_id": pid_obj})),
+                asyncio.to_thread(lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})),
+            )
         from api.recommendation_draft import prepare_recommendation
         try:
             patient_data, current_hash = await asyncio.to_thread(
                 prepare_recommendation, db, patient_id, partial, msg.get("report_id")
             )
         except ValueError as error:
+            _log_timing(endpoint, correlation_id, "mongo_data_preparation", mongo_started, outcome="error")
             await websocket.send_json({"error": str(error)})
             await websocket.close()
             return
+        _log_timing(endpoint, correlation_id, "mongo_data_preparation", mongo_started)
 
-        rec_doc = await asyncio.to_thread(
-            lambda: db["recommendation-data"].find_one({"patient_id": pid_obj})
-        )
-        if rec_doc and current_hash and rec_doc.get("input_hash") == current_hash and valid_cached_recommendation(rec_doc):
-            print(f"⚡ /ws/recommendation: hash unchanged for {patient_id}, returning cache")
+        cache_started = time.monotonic()
+        cache_hit = bool(rec_doc and current_hash and rec_doc.get("input_hash") == current_hash and valid_cached_recommendation(rec_doc))
+        _log_timing(endpoint, correlation_id, "cache_hash_lookup", cache_started, cache="hit" if cache_hit else "miss")
+        if cache_hit:
             await websocket.send_json({
                 "top_3_action_areas": rec_doc["top_3_action_areas"],
-                "next_session_plan":  rec_doc["next_session_plan"],
+                "next_session_plan": rec_doc["next_session_plan"],
                 "cached": True,
             })
             await websocket.close()
             return
 
-        # Generate from the validated draft and optional VALD context.
-        from LLM.recommendation.recommendation_agent import RecommendationAgent
-        agent = RecommendationAgent()
-        output = await asyncio.to_thread(agent.generate, patient_data)
+        from LLM.recommendation.recommendation_agent import get_shared_agent
+        construction_started = time.monotonic()
+        agent = get_shared_agent()
+        _log_timing(endpoint, correlation_id, "recommendation_agent_construction", construction_started)
+        generation_started = time.monotonic()
+        output = await asyncio.to_thread(
+            agent.generate, patient_data,
+            lambda stage, started, **fields: _log_timing(endpoint, correlation_id, stage, started, **fields),
+        )
+        _log_timing(endpoint, correlation_id, "recommendation_generation", generation_started)
+        persistence_started = time.monotonic()
         await asyncio.to_thread(save_recommendation, db, patient_id, output, current_hash, partial.get("hash"))
+        _log_timing(endpoint, correlation_id, "recommendation_persistence", persistence_started)
 
-        print(f"✅ /ws/recommendation: generated for {patient_id} (hash={current_hash[:8] if current_hash else 'none'})")
         await websocket.send_json({
             "top_3_action_areas": output.top_3_action_areas,
-            "next_session_plan":  output.next_session_plan,
+            "next_session_plan": output.next_session_plan,
             "cached": False,
         })
         await websocket.close()
@@ -299,6 +333,8 @@ async def websocket_recommendation(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
+    finally:
+        _log_timing(endpoint, correlation_id, "request_total", request_started)
 
 
 @app.websocket("/ws/triage")
