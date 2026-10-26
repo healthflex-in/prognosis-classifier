@@ -9,9 +9,11 @@ Generates two patient-facing retention fields from a completed first-assessment 
 import json
 import os
 import re
+import threading
+import time
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -188,6 +190,33 @@ DEFAULT_THINKING_BUDGET = _env_int("RECOMMENDATION_THINKING_BUDGET", 128)
 DEFAULT_MAX_TOKENS = _env_int("RECOMMENDATION_MAX_TOKENS", 1024)
 
 
+# ── Timing-log helpers: sizes and counts only, never text ─────────────────────
+
+def _prompt_size_fields(patient_data: Dict[str, Any], user_prompt: str) -> Dict[str, Any]:
+    sd = patient_data.get("source_data", {}) or {}
+    return {
+        "system_chars": len(SYSTEM_PROMPT),
+        "user_chars": len(user_prompt),
+        "goals_chars": len(str(sd.get("patient_goals") or "")),
+        "objective_chars": len(str(sd.get("objective_notes") or "")),
+        "existing_recs_chars": len(str(sd.get("existing_recommendations") or "")),
+    }
+
+
+def _token_usage_fields(response: Any) -> Dict[str, Any]:
+    try:
+        usage = getattr(response, "usage_metadata", None) or {}
+        details = usage.get("output_token_details") or {}
+        fields = {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "reasoning_tokens": details.get("reasoning"),
+        }
+        return {key: value for key, value in fields.items() if value is not None}
+    except Exception:
+        return {}
+
+
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 class RecommendationAgent:
@@ -223,7 +252,11 @@ class RecommendationAgent:
                 )
         return ChatVertexAI(**kwargs)
 
-    def generate(self, patient_data: Dict[str, Any]) -> RecommendationOutput:
+    def generate(
+        self,
+        patient_data: Dict[str, Any],
+        timing_callback: Optional[Callable[..., None]] = None,
+    ) -> RecommendationOutput:
         user_prompt = _build_user_prompt(patient_data)
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
@@ -232,10 +265,21 @@ class RecommendationAgent:
 
         # One bounded rewrite: valid responses need only the original call.
         for attempt in range(2):
+            invoke_started = time.monotonic()
+            response = None
             try:
                 response = self.llm.invoke(messages)
             except Exception as error:
                 raise RuntimeError("Recommendation generation failed. Please try again.") from error
+            finally:
+                if timing_callback:
+                    try:
+                        timing_callback("recommendation_model_invoke", invoke_started,
+                                        attempt=attempt + 1,
+                                        **_prompt_size_fields(patient_data, user_prompt),
+                                        **_token_usage_fields(response))
+                    except Exception:
+                        pass  # timing must never affect generation
             raw = response.content
             try:
                 if not isinstance(raw, str):
@@ -264,3 +308,20 @@ class RecommendationAgent:
         # Never save a truncated response or disguise an AI failure as a generic
         # patient recommendation. Existing routes surface this error to the UI.
         raise RuntimeError("Could not generate complete recommendations within the character limits. Please try again.")
+
+
+# ── Shared instance ───────────────────────────────────────────────────────────
+# Building ChatVertexAI per request repeats credential/client setup. The client is
+# stateless between calls, so one instance per process is reused.
+
+_shared_agent: Optional[RecommendationAgent] = None
+_shared_agent_lock = threading.Lock()
+
+
+def get_shared_agent() -> RecommendationAgent:
+    global _shared_agent
+    if _shared_agent is None:
+        with _shared_agent_lock:
+            if _shared_agent is None:
+                _shared_agent = RecommendationAgent()
+    return _shared_agent

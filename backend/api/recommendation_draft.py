@@ -13,15 +13,24 @@ def prepare_recommendation(db, patient_id, partial, report_id=None):
     if report_id and draft_report_id != report_id:
         raise ValueError('Assessment draft changed. Please generate again.')
     if draft_report_id:
-        user = db.users.find_one({'_id': pid, 'userType': 'PATIENT'})
-        report = db.reports.find_one({'_id': ObjectId(draft_report_id), 'patient': pid, 'isFirstAssessment': True}, {'_id': 1})
+        from concurrent.futures import ThreadPoolExecutor
+        from utils.vald_extractor import extract_vald_first_session
+
+        def load_vald():
+            try:
+                return extract_vald_first_session(db, patient_id)
+            except Exception:
+                return {}
+
+        # Three independent reads: run them together instead of one after another.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            user_f = pool.submit(db.users.find_one, {'_id': pid, 'userType': 'PATIENT'})
+            report_f = pool.submit(db.reports.find_one,
+                                   {'_id': ObjectId(draft_report_id), 'patient': pid, 'isFirstAssessment': True}, {'_id': 1})
+            vald_f = pool.submit(load_vald)
+            user, report, vald = user_f.result(), report_f.result(), vald_f.result()
         if not user or not report:
             raise ValueError('Patient or first-assessment report not found')
-        from utils.vald_extractor import extract_vald_first_session
-        try:
-            vald = extract_vald_first_session(db, patient_id)
-        except Exception:
-            vald = {}
         data = {'patient_id': patient_id, 'source_data': {}, **vald}
     else:
         # Existing clients still send four fields; retain their saved-report context.

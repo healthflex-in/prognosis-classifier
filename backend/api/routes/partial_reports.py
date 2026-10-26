@@ -54,6 +54,17 @@ def compute_partial_hash(fields: dict) -> str:
     return sha256(canonical.encode()).hexdigest()
 
 
+def build_inline_partial(draft: dict) -> dict:
+    """Validate and hash a draft sent inline, exactly as the POST route would.
+
+    Returns the same {'fields', 'hash'} shape the recommendation reads from the
+    stored `partial-reports` document, so generation need not wait for that write.
+    Raises ValueError (pydantic's ValidationError is one) for an invalid draft."""
+    fields = PartialReportPayload(**draft).model_dump()
+    fields.pop("prognosis_text", None)
+    return {"fields": fields, "hash": compute_partial_hash(fields)}
+
+
 def _get_db():
     from utils.mongo_connection import get_mongo_db
     _, db = get_mongo_db()
