@@ -63,8 +63,8 @@ FIELD 1 — top_3_action_areas:
 - Each of the 3 items must reflect a distinct idea — do not restate the same concept in different words.
 
 FIELD 2 — next_session_plan:
-- Maximum 90 characters. 1–2 short sentences maximum. Be concise.
-- Prefer one complete sentence of 60–80 characters. End with sentence punctuation. Never end with an unfinished thought such as "strengthening for" or a cut word such as "exerc".
+- Hard limit: 90 characters including spaces and the final punctuation. 1–2 short sentences maximum. Be concise.
+- Write one complete sentence of 60–75 characters. Count the characters before answering; if it is over 80, shorten it. End with sentence punctuation. Never end with an unfinished thought such as "strengthening for" or a cut word such as "exerc".
 - Must reference something specific from this patient's assessment — the affected body area, a specific movement goal, or a treatment approach directly relevant to their complaint.
 - Describe what will actually happen next session — forward-looking, not a summary of findings.
 - Use patient-friendly language only.
@@ -89,9 +89,38 @@ Respond with this exact JSON structure:
     "string — max 40 chars, specific to this patient's findings/goals",
     "string — max 40 chars, specific to this patient's functional limitation"
   ],
-  "next_session_plan": "string — max 90 characters, specific to this patient, forward-looking"
+  "next_session_plan": "string — max 80 characters, specific to this patient, forward-looking"
 }"""
 
+
+
+PLAN_REWRITE_SYSTEM = (
+    "You shorten one sentence for a physiotherapy patient message. Keep exactly the same meaning, "
+    "the same body area, the same side (left/right) and the same activity. Do not add any new "
+    "treatment, fact or advice. Use complete words and one complete sentence that ends with a full "
+    "stop. It must be at most 80 characters including spaces and the full stop. To make it shorter, "
+    "remove or replace whole words. Never abbreviate or cut any word. Return only the sentence."
+)
+
+AREA_REWRITE_SYSTEM = (
+    "You shorten one short action phrase for a physiotherapy patient card. Keep exactly the same meaning, "
+    "the same body area, the same side (left/right) and the same activity. Do not add anything new. "
+    "It must be at most 40 characters including spaces, with no full stop at the end. To make it shorter, "
+    "remove or replace whole words. Never abbreviate, shorten or cut any word. Return only the phrase."
+)
+
+
+
+def _has_cut_word(original: str, rewritten: str) -> bool:
+    """True if the rewrite contains a word that is just the front of a longer word from the
+    original (for example "sit" for "sitting"). Shortening must drop whole words, never chop them."""
+    original_words = set(re.findall(r"[a-z]+", original.lower()))
+    for word in re.findall(r"[a-z]+", rewritten.lower()):
+        if len(word) >= 3 and word not in original_words and any(
+            longer.startswith(word) and len(longer) - len(word) >= 2 for longer in original_words
+        ):
+            return True
+    return False
 
 def _build_user_prompt(patient_data: Dict[str, Any]) -> str:
     sd = patient_data.get("source_data", {})
@@ -228,6 +257,8 @@ class RecommendationAgent:
         self.thinking_budget = thinking_budget
         self.max_tokens = max_tokens
         self.llm = self._build_llm(thinking_budget, max_tokens)
+        # Tiny task (shorten one sentence): no thinking, short output.
+        self._rewriter = self._build_llm(0, 256)
 
     @staticmethod
     def _build_llm(thinking_budget: Optional[int], max_tokens: int) -> ChatVertexAI:
@@ -251,6 +282,72 @@ class RecommendationAgent:
                     "version; falling back to default (Auto) thinking."
                 )
         return ChatVertexAI(**kwargs)
+
+    def _shorten_overlong(
+        self,
+        patient_data: Dict[str, Any],
+        raw: str,
+        error: ValidationError,
+        timing_callback: Optional[Callable[..., None]] = None,
+    ) -> Optional[RecommendationOutput]:
+        """Fix an answer whose ONLY problem is text that is a little too long.
+
+        Each over-long field (the plan, or an action area) is shortened by a small call that
+        sees just that text and the chief complaint. Every other field stays exactly as the
+        model wrote it. Returns None for any other problem, or if the result is still
+        invalid, so the caller falls back to the full rewrite retry."""
+        try:
+            issues = error.errors(include_input=False, include_url=False)
+            targets = []  # ("plan",) or ("area", index)
+            for issue in issues:
+                loc = tuple(issue["loc"])
+                if issue["type"] != "string_too_long":
+                    return None
+                if loc == ("next_session_plan",):
+                    targets.append(("plan",))
+                elif len(loc) == 2 and loc[0] == "top_3_action_areas" and isinstance(loc[1], int):
+                    targets.append(("area", loc[1]))
+                else:
+                    return None
+            if not targets or len(targets) > 3:
+                return None
+            data = json.loads(_clean_json(raw))
+            areas, plan = list(data["top_3_action_areas"]), data["next_session_plan"]
+            chief = (patient_data.get("source_data", {}) or {}).get("chief_complaint", "")
+            for target in targets:
+                if target[0] == "plan":
+                    system, label, text = PLAN_REWRITE_SYSTEM, "Sentence", plan
+                else:
+                    system, label, text = AREA_REWRITE_SYSTEM, "Phrase", areas[target[1]]
+                started = time.monotonic()
+                response = None
+                try:
+                    response = self._rewriter.invoke([
+                        SystemMessage(content=system),
+                        HumanMessage(content=f"Chief complaint: {chief}\n{label} to shorten ({len(text)} characters): {text}"),
+                    ])
+                finally:
+                    if timing_callback:
+                        try:
+                            timing_callback("recommendation_shorten", started,
+                                            field=target[0], **_token_usage_fields(response))
+                        except Exception:
+                            pass  # timing must never affect generation
+                shortened = response.content
+                if not isinstance(shortened, str):
+                    return None
+                shortened = shortened.strip().strip('"').strip()
+                if not shortened or _has_cut_word(text, shortened):
+                    return None  # a chopped word is worse than a retry: use the full rewrite
+                if target[0] == "plan":
+                    plan = shortened
+                else:
+                    areas[target[1]] = shortened
+            return RecommendationOutput.model_validate(
+                {"top_3_action_areas": areas, "next_session_plan": plan}
+            )
+        except Exception:
+            return None
 
     def generate(
         self,
@@ -288,6 +385,10 @@ class RecommendationAgent:
             except (ValueError, TypeError) as error:
                 if attempt == 1:
                     break
+                if isinstance(error, ValidationError) and isinstance(raw, str):
+                    shortened = self._shorten_overlong(patient_data, raw, error, timing_callback)
+                    if shortened is not None:
+                        return shortened
                 if isinstance(error, ValidationError):
                     issues = "; ".join(
                         f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
