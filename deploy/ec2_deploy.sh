@@ -92,15 +92,15 @@ if [ ! -f "$BACKEND_DIR/.env" ]; then
 MONGO_URI=mongodb+srv://healthflex-production:FUvgMqSppKigmKHK@healthflex-prod.su93nwo.mongodb.net/stance-dashboard?retryWrites=true&w=majority
 MONGO_DB=stance-dashboard
 GOOGLE_CLOUD_PROJECT=stance-ai
-GOOGLE_APPLICATION_CREDENTIALS=/opt/prognosis-classifier/backend/stance-ai-8919b7295fb6.json
+GOOGLE_APPLICATION_CREDENTIALS=/opt/prognosis-classifier/backend/ai-agents-513605-1826f856cb89.json
 GOOGLE_CLOUD_LOCATION=us-central1
 EOF
     echo -e "${YELLOW}Please edit $BACKEND_DIR/.env with your actual credentials${NC}"
 fi
 
 # Ensure credentials file exists
-if [ ! -f "$BACKEND_DIR/stance-ai-8919b7295fb6.json" ]; then
-    echo -e "${YELLOW}WARNING: Google credentials file not found at $BACKEND_DIR/stance-ai-8919b7295fb6.json${NC}"
+if [ ! -f "$BACKEND_DIR/ai-agents-513605-1826f856cb89.json" ]; then
+    echo -e "${YELLOW}WARNING: Google credentials file not found at $BACKEND_DIR/ai-agents-513605-1826f856cb89.json${NC}"
     echo "Please upload your service account JSON file"
 fi
 
@@ -228,7 +228,7 @@ echo "  Nginx: tail -f /var/log/nginx/error.log"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC}"
 echo "1. Edit $BACKEND_DIR/.env with your actual credentials"
-echo "2. Upload your Google service account JSON to $BACKEND_DIR/stance-ai-8919b7295fb6.json"
+echo "2. Upload your Google service account JSON to $BACKEND_DIR/ai-agents-513605-1826f856cb89.json"
 echo "3. Update nginx config with your domain name (replace 'server_name _;')"
 echo "4. For HTTPS, install certbot: apt-get install certbot python3-certbot-nginx && certbot --nginx"
 echo ""

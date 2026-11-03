@@ -204,6 +204,15 @@ def save_recommendation(db, patient_id: str, output, input_hash: Optional[str] =
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+@router.post("/warmup")
+async def warmup_recommendation():
+    """Fire-and-forget: warm connections before the user clicks Generate."""
+    import asyncio
+    from services.recommendation_warmup import warm_recommendation_path
+    asyncio.get_running_loop().run_in_executor(None, warm_recommendation_path)
+    return {"status": "warming"}
+
+
 @router.get("/{patient_id}", response_model=RecommendationResponse)
 async def get_recommendation(patient_id: str) -> RecommendationResponse:
     """Fetch the stored AI recommendation for a patient."""

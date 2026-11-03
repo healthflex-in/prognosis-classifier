@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy backend source (excluding .env — injected at runtime)
 COPY . .
 
+# Fail the build instead of publishing an image that crashes on import.
+RUN python scripts/deployment_check.py --source-only
+
 EXPOSE 8013
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8013"]

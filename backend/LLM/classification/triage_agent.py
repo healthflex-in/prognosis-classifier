@@ -462,7 +462,7 @@ class TriageAgent:
         # Initialize Google GenAI client with Vertex AI (mandatory)
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
         
         if not self.project_id:
             raise ValueError("GOOGLE_CLOUD_PROJECT not set in environment")
@@ -478,7 +478,7 @@ class TriageAgent:
                 project=self.project_id,
                 location=self.location
             )
-            self.model = os.getenv("TRIAGE_MODEL", "gemini-2.5-flash")
+            self.model = os.getenv("TRIAGE_MODEL", "gemini-3.5-flash-lite")
             self.fallback_model = os.getenv("TRIAGE_FALLBACK_MODEL") or None
             print(f"✅ Google GenAI Vertex AI client initialized")
             print(f"   Project: {self.project_id}")
@@ -1143,7 +1143,7 @@ Provide classification in this EXACT JSON structure:
                     print(f"   Required permission: 'aiplatform.endpoints.predict'")
                     print(f"\n   To fix this, grant the 'Vertex AI User' role to your service account:")
                     print(f"   1. Get service account email from: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'credentials file')}")
-                    print(f"   2. Run: gcloud projects add-iam-policy-binding stance-ai \\")
+                    print(f"   2. Run: gcloud projects add-iam-policy-binding ai-agents-513605 \\")
                     print(f"        --member=\"serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL\" \\")
                     print(f"        --role=\"roles/aiplatform.user\"")
                     print(f"\n   Or use Google Cloud Console:")
@@ -1359,7 +1359,7 @@ Provide classification in this EXACT JSON structure:
                 print(f"   Required permission: 'aiplatform.endpoints.predict'")
                 print(f"\n   To fix this, grant the 'Vertex AI User' role to your service account:")
                 print(f"   1. Get service account email from: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'credentials file')}")
-                print(f"   2. Run: gcloud projects add-iam-policy-binding stance-ai \\")
+                print(f"   2. Run: gcloud projects add-iam-policy-binding ai-agents-513605 \\")
                 print(f"        --member=\"serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL\" \\")
                 print(f"        --role=\"roles/aiplatform.user\"")
                 print(f"\n   Or use Google Cloud Console:")

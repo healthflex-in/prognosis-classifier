@@ -19,6 +19,7 @@ from LLM.query.db_schema_discovery import get_database_schema
 # LangChain Google Vertex AI
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from utils.llm_text import message_text
 import warnings
 
 # Suppress the deprecation warning for ChatVertexAI
@@ -98,7 +99,7 @@ class ProperReActQueryAgent:
         # Vertex AI configuration
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
 
         if not self.project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT not set in environment")
@@ -109,14 +110,14 @@ class ProperReActQueryAgent:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.creds_path
         
         self.llm = ChatVertexAI(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.5-flash-lite",
             project=self.project_id,
             location=self.location,
             temperature=0.1,
             max_output_tokens=2048,
         )
         
-        print(f"🤖 Using ReAct reasoning agent with model: gemini-2.5-flash")
+        print(f"🤖 Using ReAct reasoning agent with model: gemini-3.5-flash-lite")
         
         # Discover database schema dynamically
         try:
@@ -238,7 +239,7 @@ Thought: I need to analyze what the user is asking for.
             ]
             
             reasoning_response = self.llm.invoke(messages)
-            reasoning_text = reasoning_response.content
+            reasoning_text = message_text(reasoning_response.content)
             
             print(f"🧠 Initial Reasoning:\n{reasoning_text}")
             

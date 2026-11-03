@@ -33,6 +33,7 @@ dist-ssr/
 # Environment variables
 .env
 .env.local
+.env.prod
 .env.*.local
 
 # Logs
@@ -65,3 +66,6 @@ deploy/*.pem
 # Backup/duplicate files
 *[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9].py
 .env.dev
+
+# Google service account keys
+backend/ai-agents-*.json

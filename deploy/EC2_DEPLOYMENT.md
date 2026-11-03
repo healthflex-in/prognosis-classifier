@@ -1,5 +1,8 @@
 # EC2 Deployment Guide for Prognosis Classifier
 
+For the current Docker/Caddy deployment, use [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md).
+The instructions below describe the legacy systemd/nginx installation.
+
 This guide walks you through deploying both the frontend and backend to a single EC2 instance.
 
 ## Prerequisites
@@ -89,14 +92,14 @@ nano .env
 MONGO_URI=mongodb+srv://healthflex-production:FUvgMqSppKigmKHK@healthflex-prod.su93nwo.mongodb.net/stance-dashboard?retryWrites=true&w=majority
 MONGO_DB=stance-dashboard
 GOOGLE_CLOUD_PROJECT=stance-ai
-GOOGLE_APPLICATION_CREDENTIALS=/opt/prognosis-classifier/backend/stance-ai-8919b7295fb6.json
+GOOGLE_APPLICATION_CREDENTIALS=/opt/prognosis-classifier/backend/ai-agents-513605-1826f856cb89.json
 GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 **Upload Google credentials**:
 ```bash
 # From your local machine:
-scp -i your-key.pem backend/stance-ai-8919b7295fb6.json ubuntu@your-ec2-ip:/opt/prognosis-classifier/backend/
+scp -i your-key.pem backend/ai-agents-513605-1826f856cb89.json ubuntu@your-ec2-ip:/opt/prognosis-classifier/backend/
 ```
 
 ### 5. Create Systemd Service for Backend

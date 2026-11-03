@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 # LangChain Google Vertex AI
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from utils.llm_text import message_text
 import warnings
 
 # Suppress deprecation warnings
@@ -237,7 +238,7 @@ class ClinicalPrognosisAgent:
         # Vertex AI configuration
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
 
         if not self.project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT not set in environment")
@@ -248,14 +249,14 @@ class ClinicalPrognosisAgent:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.creds_path
         
         self.llm = ChatVertexAI(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.5-flash-lite",
             project=self.project_id,
             location=self.location,
             temperature=0.1,
             max_output_tokens=8192,
         )
         
-        print(f"🏥 Advanced Clinical Prognosis Agent initialized with model: gemini-2.5-flash")
+        print(f"🏥 Advanced Clinical Prognosis Agent initialized with model: gemini-3.5-flash-lite")
 
     def _research_condition_online(self, condition: str, joint: str, age_group: str = "adult") -> str:
         """
@@ -708,7 +709,7 @@ Return ONLY the JSON object. No markdown, no explanation outside the JSON."""
                 HumanMessage(content=user_prompt)
             ]
             response = self.llm.invoke(messages)
-            ai_text = response.content.strip()
+            ai_text = message_text(response.content).strip()
 
             # Use robust cleaning for JSON response
             json_str = clean_json_response(ai_text)
@@ -729,6 +730,11 @@ Return ONLY the JSON object. No markdown, no explanation outside the JSON."""
             except Exception:
                 pass
             print(f"   AI response (first 500 chars): {ai_text[:500]}")
+            cleaned = clean_json_response(ai_text)
+            print(f"   Raw length: {len(ai_text)}, cleaned length: {len(cleaned)}")
+            print(f"   Around error (pos {e.pos}): ...{cleaned[max(0, e.pos - 300):e.pos + 200]}...")
+            if os.getenv("PROGNOSIS_DEBUG_LLM"):
+                print(f"   FULL AI RESPONSE:\n{ai_text}")
             return self._create_enhanced_fallback_analysis(
                 vald_data, clinical_findings, evidence_findings, existing_diagnosis
             )

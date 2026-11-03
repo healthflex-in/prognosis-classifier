@@ -6,6 +6,10 @@ Standardizes MongoDB client creation across the application.
 from pymongo import MongoClient
 from typing import Optional
 import os
+import threading
+
+_shared_clients: dict = {}
+_shared_lock = threading.Lock()
 
 
 def create_mongo_client(mongo_uri: Optional[str] = None) -> MongoClient:
@@ -54,7 +58,13 @@ def get_mongo_db(db_name: Optional[str] = None) -> tuple[MongoClient, any]:
     """
     if db_name is None:
         db_name = os.getenv("MONGO_DB", "stance-dashboard")
-    
-    client = create_mongo_client()
-    db = client[db_name]
-    return client, db
+
+    # One pooled client per URI: building a client per call re-opens the whole
+    # TLS connection pool, which dominated first-query latency on every request.
+    uri = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
+    with _shared_lock:
+        client = _shared_clients.get(uri)
+        if client is None:
+            client = create_mongo_client()
+            _shared_clients[uri] = client
+    return client, client[db_name]
