@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_vertexai import ChatVertexAI
 from pydantic import ValidationError
 from utils.recommendation_output import RecommendationOutput
+from utils.llm_text import message_text
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_google_vertexai")
 
@@ -208,7 +209,7 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-# Thinking budget for gemini-2.5-flash (this is a tiny, structured output task):
+# Thinking budget for the Gemini model (this is a tiny, structured output task):
 #   -1 = dynamic / "Auto"  → the model decides (original production behaviour)
 #    0 = thinking disabled  → fastest, but may weaken 3-area prioritisation
 #   >0 = capped thinking tokens (e.g. 128 keeps most reasoning, cuts most latency)
@@ -263,9 +264,9 @@ class RecommendationAgent:
     @staticmethod
     def _build_llm(thinking_budget: Optional[int], max_tokens: int) -> ChatVertexAI:
         kwargs: Dict[str, Any] = dict(
-            model="gemini-2.5-flash",
-            project=os.getenv("GOOGLE_CLOUD_PROJECT", "stance-ai"),
-            location="us-central1",
+            model="gemini-3.5-flash-lite",
+            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+            location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
             temperature=0.3,
             max_tokens=max_tokens,
         )
@@ -333,7 +334,7 @@ class RecommendationAgent:
                                             field=target[0], **_token_usage_fields(response))
                         except Exception:
                             pass  # timing must never affect generation
-                shortened = response.content
+                shortened = message_text(response.content)
                 if not isinstance(shortened, str):
                     return None
                 shortened = shortened.strip().strip('"').strip()
@@ -377,7 +378,7 @@ class RecommendationAgent:
                                         **_token_usage_fields(response))
                     except Exception:
                         pass  # timing must never affect generation
-            raw = response.content
+            raw = message_text(response.content)
             try:
                 if not isinstance(raw, str):
                     raise ValueError("Return a single JSON object as text")

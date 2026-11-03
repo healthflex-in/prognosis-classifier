@@ -299,7 +299,7 @@ class ClinicalAnalysisAgent:
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         # Use same default location pattern as triage_agent
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
         
         if not self.project_id:
             raise ValueError("GOOGLE_CLOUD_PROJECT not set in environment")
@@ -315,7 +315,7 @@ class ClinicalAnalysisAgent:
                 project=self.project_id,
                 location=self.location
             )
-            self.model = "gemini-2.5-flash"
+            self.model = "gemini-3.5-flash-lite"
             print("✅ Google GenAI client initialized")
             print(f"   Project: {self.project_id}")
             print(f"   Location: {self.location}")

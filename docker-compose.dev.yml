@@ -14,8 +14,8 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/stance-ai-8919b7295fb6.json}
-        target: /app/stance-ai-8919b7295fb6.json
+        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/ai-agents-513605-1826f856cb89.json}
+        target: /app/ai-agents-513605-1826f856cb89.json
         read_only: true
         bind:
           create_host_path: false
@@ -39,8 +39,8 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/stance-ai-8919b7295fb6.json}
-        target: /app/stance-ai-8919b7295fb6.json
+        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/ai-agents-513605-1826f856cb89.json}
+        target: /app/ai-agents-513605-1826f856cb89.json
         read_only: true
         bind:
           create_host_path: false

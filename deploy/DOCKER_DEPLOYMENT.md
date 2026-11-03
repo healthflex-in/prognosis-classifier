@@ -13,9 +13,9 @@ Use this workflow for the Docker/Caddy setup. `ec2_deploy.sh` and
    These missing files cannot be reconstructed by the deployment script.
 2. Provision `backend/.env.prod` (or `.env.dev`) on the server, with the correct
    MongoDB connection/database and Google project. Set
-   `GOOGLE_APPLICATION_CREDENTIALS=/app/stance-ai-8919b7295fb6.json`.
+   `GOOGLE_APPLICATION_CREDENTIALS=/app/ai-agents-513605-1826f856cb89.json`.
 3. Provision the valid Google service-account JSON once. The default host path
-   remains `backend/stance-ai-8919b7295fb6.json`. To keep it outside checkouts,
+   remains `backend/ai-agents-513605-1826f856cb89.json`. To keep it outside checkouts,
    put `PROD_GOOGLE_CREDENTIALS_FILE=/etc/prognosis/prod-service-account.json`
    in the project-root `.env` used by Compose. Dev supports
    `DEV_GOOGLE_CREDENTIALS_FILE` separately. This is a host path; do not change

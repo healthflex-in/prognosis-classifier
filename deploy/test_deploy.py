@@ -136,7 +136,7 @@ class ComposeIsolationTests(unittest.TestCase):
                 shutil.copy(REPO / compose_file.name, compose_file)
                 (root / f'backend/.env.{target}').write_text(
                     f'MONGO_URI=mongodb://fixture/{target}\nMONGO_DB={target}\n'
-                    'GOOGLE_APPLICATION_CREDENTIALS=/app/stance-ai-8919b7295fb6.json\n'
+                    'GOOGLE_APPLICATION_CREDENTIALS=/app/ai-agents-513605-1826f856cb89.json\n'
                 )
                 env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'DEV_GOOGLE_', 'PROD_GOOGLE_'))}
                 result = subprocess.run(['docker', 'compose', '-f', str(compose_file), 'config', '--format', 'json'],
