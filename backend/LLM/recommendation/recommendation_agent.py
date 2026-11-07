@@ -17,12 +17,11 @@ from typing import Any, Callable, Dict, Optional
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_google_vertexai import ChatVertexAI
 from pydantic import ValidationError
 from utils.recommendation_output import RecommendationOutput
 from utils.llm_text import message_text
-
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_google_vertexai")
+from utils.llm_provider import build_chat_llm
+from utils.pricing_guard import guard_messages_length, PromptTooLargeForModelError
 
 backend_env = Path(__file__).parent.parent.parent / ".env"
 if backend_env.exists():
@@ -209,13 +208,15 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-# Thinking budget for the Gemini model (this is a tiny, structured output task):
-#   -1 = dynamic / "Auto"  → the model decides (original production behaviour)
-#    0 = thinking disabled  → fastest, but may weaken 3-area prioritisation
-#   >0 = capped thinking tokens (e.g. 128 keeps most reasoning, cuts most latency)
-# Default 128: keep the prioritisation reasoning, drop the multi-thousand-token
-# "thinking" that was the bulk of the ~15s latency.
-DEFAULT_THINKING_BUDGET = _env_int("RECOMMENDATION_THINKING_BUDGET", 128)
+# Thinking budget (this is a tiny, structured output task):
+#    0  = thinking disabled → fastest
+#   >0  = capped thinking tokens; Claude's API minimum is 1024, so anything
+#         requested below that is raised to 1024 (see utils/llm_provider.py)
+# Default 0 (disabled): bench_report.md measured the old 128-token cap at
+# quality-parity with thinking fully off, and Claude's minimum enabled budget
+# (1024) is far above that — so there's no small-budget middle ground to
+# recreate here. Skip thinking by default on this agent.
+DEFAULT_THINKING_BUDGET = _env_int("RECOMMENDATION_THINKING_BUDGET", 0)
 # Output is 3 short phrases + one <=90 char sentence — 8192 was wildly oversized.
 DEFAULT_MAX_TOKENS = _env_int("RECOMMENDATION_MAX_TOKENS", 1024)
 
@@ -262,27 +263,16 @@ class RecommendationAgent:
         self._rewriter = self._build_llm(0, 256)
 
     @staticmethod
-    def _build_llm(thinking_budget: Optional[int], max_tokens: int) -> ChatVertexAI:
-        kwargs: Dict[str, Any] = dict(
-            model="gemini-3.5-flash-lite",
-            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-            location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+    def _build_llm(thinking_budget: Optional[int], max_tokens: int):
+        # Provider comes from LLM_PROVIDER (see utils/llm_provider.py) — this
+        # agent never names a provider SDK class directly.
+        model = os.getenv("RECOMMENDATION_MODEL", "claude-haiku-5-5")
+        return build_chat_llm(
+            model=model,
             temperature=0.3,
             max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
         )
-        # thinking_budget=None means "don't pass it" → library default (Auto),
-        # i.e. the exact original behaviour.
-        if thinking_budget is not None:
-            try:
-                return ChatVertexAI(thinking_budget=thinking_budget, **kwargs)
-            except TypeError:
-                # Installed langchain-google-vertexai predates the thinking_budget
-                # kwarg — degrade to library default instead of crashing.
-                print(
-                    "⚠️  ChatVertexAI has no 'thinking_budget' kwarg in this "
-                    "version; falling back to default (Auto) thinking."
-                )
-        return ChatVertexAI(**kwargs)
 
     def _shorten_overlong(
         self,
@@ -323,10 +313,12 @@ class RecommendationAgent:
                 started = time.monotonic()
                 response = None
                 try:
-                    response = self._rewriter.invoke([
+                    rewrite_messages = [
                         SystemMessage(content=system),
                         HumanMessage(content=f"Chief complaint: {chief}\n{label} to shorten ({len(text)} characters): {text}"),
-                    ])
+                    ]
+                    guard_messages_length(self._rewriter.model, rewrite_messages)
+                    response = self._rewriter.invoke(rewrite_messages)
                 finally:
                     if timing_callback:
                         try:
@@ -366,7 +358,14 @@ class RecommendationAgent:
             invoke_started = time.monotonic()
             response = None
             try:
+                guard_messages_length(self.llm.model, messages)
                 response = self.llm.invoke(messages)
+            except PromptTooLargeForModelError:
+                # Don't relabel this one as a generic failure below — the
+                # message already explains exactly what happened, and "please
+                # try again" would be actively wrong advice (retrying sends the
+                # same size prompt again).
+                raise
             except Exception as error:
                 raise RuntimeError("Recommendation generation failed. Please try again.") from error
             finally:
@@ -413,7 +412,7 @@ class RecommendationAgent:
 
 
 # ── Shared instance ───────────────────────────────────────────────────────────
-# Building ChatVertexAI per request repeats credential/client setup. The client is
+# Building a chat client per request repeats setup work. The client is
 # stateless between calls, so one instance per process is reused.
 
 _shared_agent: Optional[RecommendationAgent] = None

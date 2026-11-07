@@ -17,13 +17,11 @@ from pymongo import MongoClient
 # Pydantic for validation
 from pydantic import BaseModel, Field, field_validator
 
-# Google GenAI integration
-try:
-    from google import genai
-    from google.genai import types
-except ImportError:
-    print("❌ google-genai not installed. Install with: pip install google-genai")
-    exit(1)
+# LLM client — provider comes from LLM_PROVIDER (see utils/llm_provider.py)
+from langchain_core.messages import HumanMessage, SystemMessage
+from utils.llm_provider import build_chat_llm
+from utils.llm_text import message_text
+from utils.pricing_guard import guard_messages_length
 
 # Load environment
 from dotenv import load_dotenv
@@ -458,40 +456,19 @@ class TriageAgent:
     """Physiotherapy Triage Agent for patient classification."""
     
     def __init__(self):
-        """Initialize the triage agent with Google GenAI Vertex AI."""
-        # Initialize Google GenAI client with Vertex AI (mandatory)
-        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        
-        if not self.project_id:
-            raise ValueError("GOOGLE_CLOUD_PROJECT not set in environment")
-        if not self.creds_path or not os.path.exists(self.creds_path):
-            raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS not set or file not found: {self.creds_path}")
-        
-        try:
-            # Use Vertex AI with service account authentication
-            # Note: Vertex AI requires service account credentials, not API keys
-            # GOOGLE_APPLICATION_CREDENTIALS must be set to service account JSON path
-            self.client = genai.Client(
-                vertexai=True,
-                project=self.project_id,
-                location=self.location
-            )
-            self.model = os.getenv("TRIAGE_MODEL", "gemini-3.5-flash-lite")
-            self.fallback_model = os.getenv("TRIAGE_FALLBACK_MODEL") or None
-            print(f"✅ Google GenAI Vertex AI client initialized")
-            print(f"   Project: {self.project_id}")
-            print(f"   Location: {self.location}")
-            print(f"   Model: {self.model}")
-            if self.fallback_model:
-                print(f"   Fallback model: {self.fallback_model}")
-        except Exception as e:
-            print(f"❌ Failed to initialize Google GenAI Vertex AI: {e}")
-            print(f"   Project: {self.project_id}")
-            print(f"   Credentials: {self.creds_path}")
-            raise
-        
+        """Initialize the triage agent."""
+        self.model = os.getenv("TRIAGE_MODEL", "claude-haiku-5-5")
+        self.fallback_model = os.getenv("TRIAGE_FALLBACK_MODEL") or None
+        self.llm = build_chat_llm(
+            model=self.model,
+            temperature=1,
+            max_tokens=8192,
+        )
+        print(f"✅ LLM client initialized")
+        print(f"   Model: {self.model}")
+        if self.fallback_model:
+            print(f"   Fallback model: {self.fallback_model}")
+
         # Load system prompt from JSON file
         prompt_file = Path(__file__).parent / "triage_prompt.json"
         try:
@@ -789,7 +766,12 @@ Use the patient's actual text as evidence. Infer reasonable values when the reco
         additional_context = ""
         
         if full_patient_record:
-            import json
+            # `json` is already imported at module level — a redundant local
+            # import here previously made Python treat `json` as a local name
+            # for this entire method, so any json.loads()/json.JSONDecodeError
+            # use earlier in classify_patient raised UnboundLocalError whenever
+            # full_patient_record wasn't passed. Found while testing the Claude
+            # migration; fixed independent of the provider change.
             # Try to extract from nested structure
             record = full_patient_record.get('first_assessment_data', full_patient_record)
             if isinstance(record, str):
@@ -1042,117 +1024,56 @@ Provide classification in this EXACT JSON structure:
 - "knee pain since 2 months" → clinical_stage: subacute (inferred from time)
 - "ACLR" or "reconstruction" → clinical_stage: post_operative, intent: post_surgical_recovery"""
         
-        config = types.GenerateContentConfig(
-            temperature=1,
-            top_p=1,
-            max_output_tokens=65535,
-            safety_settings=[
-                types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF")
-            ],
-            tools=[
-                types.Tool(google_search=types.GoogleSearch())
-            ],
-            thinking_config=types.ThinkingConfig(thinking_budget=-1),
-        )
-        
-        contents = [
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=f"{self.system_prompt}\n\n{prompt}")]
-            )
+        # ------------------------------------------------------------------
+        # MIGRATION NOTE (Gemini -> Claude):
+        # This call used to run on Vertex AI with a live `google_search` tool
+        # enabled. Unlike clinical_agent, triage_prompt.json never actually
+        # instructs the model to use search — this is a pure text-classification
+        # task (map given text into a fixed taxonomy) — so the tool was wired in
+        # but not load-bearing for this prompt. Confirmed against production
+        # data: the triage pipeline has only ever run once in prod (67 docs, all
+        # created/updated within the same ~27s window on 2026-02-06), so there is
+        # no real usage history to preserve. Dropped rather than replaced.
+        #
+        # Historical config, kept here for reference only (no longer active):
+        #   safety_settings=[... HATE_SPEECH/DANGEROUS_CONTENT/SEXUALLY_EXPLICIT/
+        #                     HARASSMENT all "OFF" ...]   — no direct Claude equivalent
+        #   tools=[types.Tool(google_search=types.GoogleSearch())]   — dropped, see above
+        #   thinking_config=types.ThinkingConfig(thinking_budget=-1)  — Claude has no
+        #       "unlimited" option; thinking is left off by default (see llm_provider.py)
+        #       and can be enabled later via a TRIAGE_THINKING_BUDGET env var if needed.
+        # ------------------------------------------------------------------
+        messages = [
+            SystemMessage(content=self.system_prompt),
+            HumanMessage(content=prompt),
         ]
-        
-        # Generate response
-        response_text = ""
+
         # Select the primary model first; the fallback is optional and explicit.
+        # Checked before the try block on purpose: a price-guard trip must
+        # surface as its own clear error, not get caught by the fallback-model
+        # retry below (retrying on a differently-sized prompt wouldn't help).
+        guard_messages_length(self.model, messages)
+        response_text = ""
         model_to_use = self.model
         try:
-            for chunk in self.client.models.generate_content_stream(
-                model=model_to_use,
-                contents=contents,
-                config=config
-            ):
-                if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
-                    continue
-                for part in chunk.candidates[0].content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        response_text += part.text
+            response = self.llm.invoke(messages)
+            response_text = message_text(response.content)
         except Exception as api_error:
-            # Check if it's a 404 model not found error and we have a fallback
-            error_msg = str(api_error)
-            fallback_success = False
-            
-            if ("404" in error_msg or "NOT_FOUND" in error_msg) and self.fallback_model and model_to_use == self.model:
-                print(f"⚠️  {self.model} not accessible, trying fallback: {self.fallback_model}")
-                model_to_use = self.fallback_model
+            if self.fallback_model and model_to_use == self.model:
+                print(f"⚠️  {self.model} failed ({api_error}); trying fallback: {self.fallback_model}")
                 try:
-                    for chunk in self.client.models.generate_content_stream(
-                        model=model_to_use,
-                        contents=contents,
-                        config=config
-                    ):
-                        if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                            for part in chunk.candidates[0].content.parts:
-                                if hasattr(part, 'text') and part.text:
-                                    response_text += part.text
+                    guard_messages_length(self.fallback_model, messages)
+                    fallback_llm = build_chat_llm(model=self.fallback_model, temperature=1, max_tokens=8192)
+                    response = fallback_llm.invoke(messages)
+                    response_text = message_text(response.content)
+                    model_to_use = self.fallback_model
                     print(f"✅ Using fallback model: {self.fallback_model}")
-                    fallback_success = True
-                    # Success! Continue to parse response below
                 except Exception as fallback_error:
-                    # Fallback also failed, treat as original error
-                    api_error = fallback_error
-                    error_msg = str(fallback_error)
-                    fallback_success = False
-            
-            # If fallback succeeded, skip error handling and continue to parse response
-            if fallback_success and response_text:
-                # Fallback worked! Continue to parse response below
-                pass
+                    # Fallback also failed — surface the fallback's error.
+                    raise fallback_error
             else:
-                # Fallback didn't succeed, handle the error
-                error_dict = None
-                
-                # Try to extract error details from exception
-                try:
-                    if hasattr(api_error, '__dict__'):
-                        error_dict = api_error.__dict__
-                    elif hasattr(api_error, 'error'):
-                        error_dict = api_error.error if isinstance(api_error.error, dict) else {'error': str(api_error.error)}
-                except:
-                    pass
-                
-                # Check for permission errors
-                is_permission_error = False
-                if error_dict and isinstance(error_dict, dict):
-                    error_info = error_dict.get('error', {})
-                    if isinstance(error_info, dict):
-                        code = error_info.get('code')
-                        message = error_info.get('message', '')
-                        if code == 403 or 'PERMISSION_DENIED' in str(message):
-                            is_permission_error = True
-                
-                if not is_permission_error:
-                    is_permission_error = "PERMISSION_DENIED" in error_msg or "403" in error_msg or "permission" in error_msg.lower()
-                
-                if is_permission_error:
-                    print(f"\n❌ PERMISSION DENIED - Vertex AI Access Failed")
-                    print(f"   The service account does not have permission to use Vertex AI.")
-                    print(f"   Required permission: 'aiplatform.endpoints.predict'")
-                    print(f"\n   To fix this, grant the 'Vertex AI User' role to your service account:")
-                    print(f"   1. Get service account email from: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'credentials file')}")
-                    print(f"   2. Run: gcloud projects add-iam-policy-binding ai-agents-513605 \\")
-                    print(f"        --member=\"serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL\" \\")
-                    print(f"        --role=\"roles/aiplatform.user\"")
-                    print(f"\n   Or use Google Cloud Console:")
-                    print(f"   IAM & Admin > IAM > Find service account > Edit > Add 'Vertex AI User' role")
-                    print(f"\n   Error details: {error_msg[:300]}")
-                    raise PermissionError("Vertex AI permission denied. Service account needs 'roles/aiplatform.user' role.")
-                else:
-                    # Re-raise other errors (including 404 if fallback failed)
-                    raise
+                # No fallback configured — surface the original error.
+                raise
         
         # Parse JSON from response
         try:
@@ -1320,55 +1241,14 @@ Provide classification in this EXACT JSON structure:
             print(f"Response: {response_text[:500]}")
             raise ValueError(f"Invalid JSON response from LLM: {e}")
         except Exception as e:
-            error_msg = str(e)
-            error_dict = None
-            
-            # Try to extract error details if it's a dict-like error
-            try:
-                if hasattr(e, '__dict__'):
-                    error_dict = e.__dict__
-                elif isinstance(e, dict):
-                    error_dict = e
-                elif hasattr(e, 'error'):
-                    error_dict = e.error if isinstance(e.error, dict) else {'error': str(e.error)}
-            except:
-                pass
-            
-            # Check for permission errors in multiple ways
-            is_permission_error = False
-            if error_dict:
-                # Check nested error structure
-                if isinstance(error_dict, dict):
-                    error_info = error_dict.get('error', {})
-                    if isinstance(error_info, dict):
-                        code = error_info.get('code')
-                        message = error_info.get('message', '')
-                        if code == 403 or 'PERMISSION_DENIED' in str(message):
-                            is_permission_error = True
-                    # Also check top level
-                    if error_dict.get('code') == 403 or 'PERMISSION_DENIED' in str(error_dict):
-                        is_permission_error = True
-            
-            # Check error message string
-            if not is_permission_error:
-                is_permission_error = "PERMISSION_DENIED" in error_msg or "403" in error_msg
-            
-            if is_permission_error:
-                print(f"\n❌ PERMISSION DENIED - Vertex AI Access Failed")
-                print(f"   The service account does not have permission to use Vertex AI.")
-                print(f"   Required permission: 'aiplatform.endpoints.predict'")
-                print(f"\n   To fix this, grant the 'Vertex AI User' role to your service account:")
-                print(f"   1. Get service account email from: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'credentials file')}")
-                print(f"   2. Run: gcloud projects add-iam-policy-binding ai-agents-513605 \\")
-                print(f"        --member=\"serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL\" \\")
-                print(f"        --role=\"roles/aiplatform.user\"")
-                print(f"\n   Or use Google Cloud Console:")
-                print(f"   IAM & Admin > IAM > Find service account > Edit > Add 'Vertex AI User' role")
-                print(f"\n   Error details: {error_msg[:300]}")
-                raise PermissionError("Vertex AI permission denied. Service account needs 'roles/aiplatform.user' role.")
-            else:
-                print(f"❌ Error classifying patient {patient_id}: {error_msg}")
-                raise
+            # MIGRATION NOTE (Gemini -> Claude): this used to pattern-match the
+            # error for Vertex AI's specific PERMISSION_DENIED/403 shape and print
+            # gcloud IAM troubleshooting steps. That's actively wrong for Anthropic
+            # errors (an invalid LLM_API_KEY can also surface as a 403), so it has
+            # been removed rather than left in place to avoid misdiagnosing a key
+            # problem as a GCP IAM problem. Just log and re-raise.
+            print(f"❌ Error classifying patient {patient_id}: {e}")
+            raise
     
     def classify_filtered_patients(
         self, 

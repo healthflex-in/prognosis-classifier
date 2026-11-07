@@ -2,11 +2,11 @@
 langchain-core>=0.3.0
 langchain>=0.3.0
 
-# Google GenAI
-google-genai>=0.2.0
-
-# Vertex AI chat model (ChatVertexAI) used by the prognosis agent
-langchain-google-vertexai>=3.0.0
+# Anthropic (Claude) chat model — used by all 5 LLM agents via
+# backend/utils/llm_provider.py. google-genai / langchain-google-vertexai are
+# no longer needed anywhere in this backend as of the Claude migration.
+anthropic>=0.36.0
+langchain-anthropic>=0.3.0
 
 # Pydantic for validation
 pydantic>=2.0.0

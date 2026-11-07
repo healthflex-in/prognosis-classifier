@@ -21,13 +21,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_core.output_parsers import PydanticOutputParser
 
-# Google GenAI integration
-try:
-    from google import genai
-    from google.genai import types
-except ImportError:
-    print("❌ google-genai not installed. Install with: pip install google-genai")
-    exit(1)
+# LLM client — provider comes from LLM_PROVIDER (see utils/llm_provider.py)
+from utils.llm_provider import build_chat_llm
+from utils.llm_text import message_text
+from utils.pricing_guard import guard_messages_length
 
 # Load environment
 from dotenv import load_dotenv
@@ -294,36 +291,19 @@ class ClinicalAnalysisAgent:
     """LangChain-based clinical analysis agent with tool calling."""
     
     def __init__(self):
-        """Initialize the agent with Google GenAI and tools."""
-        # Initialize Google GenAI client
-        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        # Use same default location pattern as triage_agent
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        
-        if not self.project_id:
-            raise ValueError("GOOGLE_CLOUD_PROJECT not set in environment")
-        if not self.creds_path or not os.path.exists(self.creds_path):
-            raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS not set or file not found: {self.creds_path}")
-        
-        try:
-            # Use Vertex AI with service account authentication
-            # Note: Vertex AI requires service account credentials, not API keys
-            # GOOGLE_APPLICATION_CREDENTIALS must be set to service account JSON path
-            self.client = genai.Client(
-                vertexai=True,
-                project=self.project_id,
-                location=self.location
-            )
-            self.model = "gemini-3.5-flash-lite"
-            print("✅ Google GenAI client initialized")
-            print(f"   Project: {self.project_id}")
-            print(f"   Location: {self.location}")
-        except Exception as e:
-            print(f"❌ Failed to initialize Google GenAI: {e}")
-            raise
+        """Initialize the clinical analysis agent."""
+        self.model_name = os.getenv("CLINICAL_MODEL", "claude-haiku-5-5")
+        self.llm = build_chat_llm(
+            model=self.model_name,
+            temperature=1,
+            max_tokens=8192,
+        )
+        print(f"✅ LLM client initialized (model={self.model_name})")
 
-        # Initialize tools (used conceptually in the prompt; actual arithmetic can be done in Python)
+        # These tool functions were defined for potential tool-calling use, but
+        # were never actually wired into the live generation call below — only
+        # Google Search was ever passed as a live tool (see analyze_patient's
+        # migration note). Left in place as-is; not deleted, not currently invoked.
         self.tools = [
             calculate_limb_symmetry_index,
             get_post_op_week,
@@ -563,105 +543,46 @@ IMPORTANT:
             format_instructions=format_instructions
         )
         
-        # Combine system and human messages into a single prompt for Google GenAI
         system_content = formatted_messages[0].content
         human_content = formatted_messages[1].content
-        full_prompt = f"{system_content}\n\n{human_content}"
-        
-        # Tools configuration:
-        # Vertex AI currently restricts multiple tools to search-only tools.
-        # To avoid INVALID_ARGUMENT ('Multiple tools are supported only when they are all search tools'),
-        # we ONLY enable Google Search here for external grounding, and rely on the model to
-        # reason about calculations in-text.
-        genai_tools = []
-        
-        # Generate content with structured output
+
+        # ------------------------------------------------------------------
+        # MIGRATION NOTE (Gemini -> Claude):
+        # This call used to run on Vertex AI with a live `google_search` tool
+        # enabled for external grounding (clinical guidelines/textbooks/etc —
+        # see clinical_prompt.yml, which was written assuming that tool exists).
+        # Claude has no equivalent built-in search-grounding tool, so it is
+        # dropped here rather than replaced — the same call made for STT in
+        # customer-agent. clinical_prompt.yml's wording was updated to match,
+        # so the model is no longer told to rely on a search tool it can't use.
+        #
+        # Historical config, kept here for reference only (no longer active):
+        #   safety_settings=[... HATE_SPEECH/DANGEROUS_CONTENT/SEXUALLY_EXPLICIT/
+        #                     HARASSMENT all "OFF" ...]   — no direct Claude equivalent
+        #   tools=[types.Tool(google_search=types.GoogleSearch())]   — dropped, see above
+        #   thinking_config=types.ThinkingConfig(thinking_budget=-1)  — Claude has no
+        #       "unlimited" option; thinking is left off by default (see llm_provider.py)
+        #       and can be enabled later via a CLINICAL_THINKING_BUDGET env var if needed.
+        #
+        # The multi-turn tool-execution loop that used to live here is also removed:
+        # it only ever triggered on a `function_call` part, and the only tool that was
+        # actually configured (Google Search) is handled server-side by Gemini and never
+        # surfaces as a function_call — so in production this loop always ran exactly one
+        # iteration. Removing it changes no observable behaviour.
+        # ------------------------------------------------------------------
         print("🔬 Performing clinical analysis...")
-        
-        config = types.GenerateContentConfig(
-            temperature=1,
-            top_p=1,
-            max_output_tokens=65535,
-            safety_settings=[
-                types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
-                types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF")
-            ],
-            tools=[
-                types.Tool(google_search=types.GoogleSearch())
-            ],
-            thinking_config=types.ThinkingConfig(thinking_budget=-1),
-        )
-        
-        # Create contents for Google GenAI
-        contents = [
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=full_prompt)]
-            )
+        print("   ⏳ Generating analysis...")
+
+        messages = [
+            SystemMessage(content=system_content),
+            HumanMessage(content=human_content),
         ]
-        
-        # Generate response with tool calling support
-        print("   ⏳ Generating analysis with tool calling...")
-        full_response = ""
-        current_contents = contents
-        max_iterations = 5
-        
-        for iteration in range(max_iterations):
-            response_text = ""
-            tool_calls_found = False
-            
-            # Stream response
-            for chunk in self.client.models.generate_content_stream(
-                model=self.model,
-                contents=current_contents,
-                config=config
-            ):
-                if chunk.candidates and chunk.candidates[0].content:
-                    if chunk.candidates[0].content.parts:
-                        for part in chunk.candidates[0].content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                response_text += part.text
-                            elif hasattr(part, 'function_call') and part.function_call:
-                                tool_calls_found = True
-                                print(f"   🛠️ Tool call detected (iteration {iteration + 1}): {part.function_call.name}")
-                                # Execute tool
-                                tool_result = self._execute_tool_call(part.function_call)
-                                # Add tool result to conversation
-                                current_contents.append(
-                                    types.Content(
-                                        role="model",
-                                        parts=[part]
-                                    )
-                                )
-                                # Truncate tool result for logging
-                                try:
-                                    preview = json.dumps(tool_result, default=str)
-                                except Exception:
-                                    preview = str(tool_result)
-                                if len(preview) > 500:
-                                    preview = preview[:500] + "...[truncated]"
-                                print(f"      ↳ Tool result: {preview}")
-                                current_contents.append(
-                                    types.Content(
-                                        role="user",
-                                        parts=[types.Part.from_text(
-                                            text=f"Tool '{part.function_call.name}' result: {preview}"
-                                        )]
-                                    )
-                                )
-            
-            if not tool_calls_found:
-                full_response = response_text
-                break
-            else:
-                # Continue iteration with tool results
-                print(f"   🔧 Tool calls executed, continuing analysis (iteration {iteration + 1})...")
-                continue
-        
-        if not full_response and response_text:
-            full_response = response_text
+        # This is the one agent whose prompt includes raw JSON dumps of clinical
+        # + VALD data rather than curated summary fields, so it's the most likely
+        # of the five to ever grow large — guard before sending.
+        guard_messages_length(self.model_name, messages)
+        response = self.llm.invoke(messages)
+        full_response = message_text(response.content)
         
         # Parse JSON from response and validate with Pydantic
         try:
