@@ -2,15 +2,18 @@
 """
 Benchmark the RecommendationAgent across thinking-budget settings.
 
-Goal: compare latency AND output quality of different Gemini 2.5 Flash thinking
-budgets (Auto vs a small cap vs off) on REAL first-assessment reports, so we can
-pick a budget that keeps prioritisation quality while cutting the ~15s latency.
+Goal: compare latency AND output quality of different thinking budgets (Auto vs
+a small cap vs off) on REAL first-assessment reports, so we can pick a budget
+that keeps prioritisation quality while cutting latency. Originally written
+against Gemini 2.5 Flash; the agent itself is now on Claude (see
+utils/llm_provider.py) and this script follows it unchanged, since it only
+calls RecommendationAgent rather than constructing its own LLM client.
 
 SAFETY — this script is strictly READ-ONLY:
   • It reads `reports` / `users` / VALD data to build the agent input.
   • It NEVER calls save_recommendation and NEVER writes to any collection.
   • It NEVER changes production config or the deployed service.
-  • It only calls the Vertex LLM (inference) and writes a local report file.
+  • It only calls the LLM (inference) and writes a local report file.
 
 Usage:
   # Benchmark real patients straight from Mongo (read-only reads):

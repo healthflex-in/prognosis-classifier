@@ -4,18 +4,21 @@ Benchmark the recommendation (user message) model call across model / thinking v
 
 SAFETY: uses only the built-in SYNTHETIC assessments below. It reads no database,
 writes nothing to any collection, and sends no patient data to the model. It only
-calls Vertex inference and prints/writes local result files.
+calls the LLM for inference and prints/writes local result files.
 
 The production system prompt, user-prompt builder, output trimming and schema are
 used unchanged; each variant only swaps the agent's `llm` object.
 
 Variants are `model[:thinking]` where thinking is `auto`, `0` (off) or a token budget:
-  gemini-2.5-flash:128      <- baseline (current default)
-  gemini-2.5-flash:0
-  gemini-2.5-flash-lite:0
+  claude-haiku-5-5:0        <- current default (thinking off, see llm_provider.py)
+  claude-haiku-5-5:1024
+  claude-sonnet-5-5:0
+
+Note: "auto" has no equivalent on Claude (no dynamic/"-1" thinking mode) — it's
+accepted as a token but behaves the same as explicit "0" here.
 
 Usage (inside the backend container):
-  python -m scripts.benchmark_recommendation_variants --variants gemini-2.5-flash:128,gemini-2.5-flash:0 --repeat 3
+  python -m scripts.benchmark_recommendation_variants --variants claude-haiku-5-5:0,claude-sonnet-5-5:0 --repeat 3
 """
 
 import argparse
@@ -85,19 +88,18 @@ def parse_variant(token: str) -> Dict[str, Any]:
 
 
 def build_llm(variant: Dict[str, Any]):
-    import os
-    from langchain_google_vertexai import ChatVertexAI
+    # Migrated off ChatVertexAI/Gemini — goes through the same provider-agnostic
+    # factory the real agents use, so this still reflects production behaviour
+    # (including the 5.x-generation temperature/thinking handling) rather than
+    # drifting from it.
+    from utils.llm_provider import build_chat_llm
 
-    kwargs: Dict[str, Any] = dict(
+    return build_chat_llm(
         model=variant["model"],
-        project=os.getenv("GOOGLE_CLOUD_PROJECT", "stance-ai"),
-        location="us-central1",
         temperature=0.3,
         max_tokens=1024,
+        thinking_budget=variant["budget"],
     )
-    if variant["budget"] is not None:
-        kwargs["thinking_budget"] = variant["budget"]
-    return ChatVertexAI(**kwargs)
 
 
 def check(output: Dict[str, Any], keywords: List[str]) -> Dict[str, Any]:
@@ -172,7 +174,7 @@ def summarise(results, variants, out_prefix) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--variants", default="gemini-2.5-flash:128")
+    parser.add_argument("--variants", default="claude-haiku-5-5:0")
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--out", default="recommendation_bench")
     args = parser.parse_args()

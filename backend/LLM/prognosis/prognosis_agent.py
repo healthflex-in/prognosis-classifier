@@ -17,14 +17,12 @@ from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-# LangChain Google Vertex AI
-from langchain_google_vertexai import ChatVertexAI
+# LLM client — provider comes from LLM_PROVIDER (see utils/llm_provider.py)
 from langchain_core.messages import HumanMessage, SystemMessage
 from utils.llm_text import message_text
+from utils.llm_provider import build_chat_llm
+from utils.pricing_guard import guard_messages_length
 import warnings
-
-# Suppress deprecation warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_google_vertexai")
 
 # Load environment
 backend_env = Path(__file__).parent.parent.parent / ".env"  # prognosis -> LLM -> backend
@@ -235,28 +233,14 @@ class ClinicalPrognosisAgent:
     """
 
     def __init__(self):
-        # Vertex AI configuration
-        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-
-        if not self.project_id:
-            raise RuntimeError("GOOGLE_CLOUD_PROJECT not set in environment")
-        if not self.creds_path or not os.path.exists(self.creds_path):
-            raise RuntimeError(f"GOOGLE_APPLICATION_CREDENTIALS not set or file not found: {self.creds_path}")
-
-        # Initialize LangChain Vertex AI LLM
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.creds_path
-        
-        self.llm = ChatVertexAI(
-            model_name="gemini-3.5-flash-lite",
-            project=self.project_id,
-            location=self.location,
+        self.model_name = os.getenv("PROGNOSIS_MODEL", "claude-haiku-5-5")
+        self.llm = build_chat_llm(
+            model=self.model_name,
             temperature=0.1,
-            max_output_tokens=8192,
+            max_tokens=8192,
         )
-        
-        print(f"🏥 Advanced Clinical Prognosis Agent initialized with model: gemini-3.5-flash-lite")
+
+        print(f"🏥 Advanced Clinical Prognosis Agent initialized with model: {self.model_name}")
 
     def _research_condition_online(self, condition: str, joint: str, age_group: str = "adult") -> str:
         """
@@ -703,11 +687,16 @@ VALD FIRST-SESSION EXERCISE DATA:
 Return ONLY the JSON object. No markdown, no explanation outside the JSON."""
 
         ai_text = ""
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        # Checked before the try block on purpose: a price-guard trip must
+        # surface as its own clear error, not get swallowed into the generic
+        # fallback-analysis path below (which would silently disguise "we
+        # refused to send this" as "the AI found insufficient data").
+        guard_messages_length(self.model_name, messages)
         try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ]
             response = self.llm.invoke(messages)
             ai_text = message_text(response.content).strip()
 

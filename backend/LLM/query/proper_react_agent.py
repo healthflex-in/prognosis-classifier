@@ -16,14 +16,12 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from LLM.query.db_schema_discovery import get_database_schema
 
-# LangChain Google Vertex AI
-from langchain_google_vertexai import ChatVertexAI
+# LLM client — provider comes from LLM_PROVIDER (see utils/llm_provider.py)
 from langchain_core.messages import HumanMessage, SystemMessage
 from utils.llm_text import message_text
+from utils.llm_provider import build_chat_llm
+from utils.pricing_guard import guard_messages_length
 import warnings
-
-# Suppress the deprecation warning for ChatVertexAI
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_google_vertexai")
 
 # Load environment
 backend_env = Path(__file__).parent.parent.parent / ".env"  # query -> LLM -> backend
@@ -96,28 +94,14 @@ class ProperReActQueryAgent:
     """
 
     def __init__(self) -> None:
-        # Vertex AI configuration
-        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-
-        if not self.project_id:
-            raise RuntimeError("GOOGLE_CLOUD_PROJECT not set in environment")
-        if not self.creds_path or not os.path.exists(self.creds_path):
-            raise RuntimeError(f"GOOGLE_APPLICATION_CREDENTIALS not set or file not found: {self.creds_path}")
-
-        # Initialize LangChain Vertex AI LLM
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.creds_path
-        
-        self.llm = ChatVertexAI(
-            model_name="gemini-3.5-flash-lite",
-            project=self.project_id,
-            location=self.location,
+        self.model_name = os.getenv("QUERY_MODEL", "claude-haiku-5-5")
+        self.llm = build_chat_llm(
+            model=self.model_name,
             temperature=0.1,
-            max_output_tokens=2048,
+            max_tokens=2048,
         )
-        
-        print(f"🤖 Using ReAct reasoning agent with model: gemini-3.5-flash-lite")
+
+        print(f"🤖 Using ReAct reasoning agent with model: {self.model_name}")
         
         # Discover database schema dynamically
         try:
@@ -237,7 +221,8 @@ Thought: I need to analyze what the user is asking for.
                 SystemMessage(content="You are a clinical dashboard expert that uses step-by-step reasoning."),
                 HumanMessage(content=reasoning_prompt)
             ]
-            
+
+            guard_messages_length(self.model_name, messages)
             reasoning_response = self.llm.invoke(messages)
             reasoning_text = message_text(reasoning_response.content)
             

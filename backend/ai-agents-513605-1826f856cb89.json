@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ai-agents-513605",
+  "private_key_id": "1826f856cb89aa1523beefa024ca4bb88ef46ed5",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDNwVwqKH5UkyDH\n2p08CFZchpMo7RwYfuKX3bXwBCZsmyIWiKlwevBYJvlGXhY8NbImVdk484N+78/K\ncb2dQQwddzOn1zOE0DnQNPHi8wezFZi4qbMKBZJ73jw8h9Hsmek52dvH+ahsFSc7\n70wBVMhgmA4005YHF22M5OB4fMOYkNPZpvMT5oBwdumlkyv6sdAU30cEYsTJjsxD\nA/jR2hbBFcBKBd1eS2TU7/0lwLPgB1sxdBRq2hCRYQ5wNj+S8q6MtkYmAhH/Fq5W\nchMPH7Ry7Rjo4fcT41LFozREdE5twyVRTqK/cYu7mTid3GSLeL9JkiSl6oLED2Pj\nl8hXBIzpAgMBAAECggEARv9PpCRw4xIZn5yp4MsnsammIdsfdLxjx+9zFiz4bUVi\nj8/8V5m0UVaxcTyKA6Crplq9J8+vMh/h3YM94INPgONe6a1yU4PeTx/Vz2/42iy7\nlAzKgMzHbQKUWnarUy8QsSuhkPFu0kzCSwYZfeQZeGs/i67u9+d3n8RiSHEUtRG1\n4T7AcUVlluupCOtVki/RKtkQPTqB4ljCSkf+KsW83+/Ol3pc5GLDOBBFaP2p6dcA\nje2F3Z+KWXlsc7ZDij4krSMrTxWI7Q5QqTQXte9SXL969Cwi9DNRR1yj2WyBR6Sk\nH5lSfrCDHMYfW3SH6nYWBCI/QESDZP+G14Ytfoh62QKBgQDvVUcRvKzfIcbYTFSP\nHqJ2cZGy3LTvguVnaDmPhAF9v/5/sc4N0Y32hsBUqQvJZR+Dv4NYRPIlDS3KwX6H\n5iibeQlbqGUKFec8odRqQcpeA4Xyu4dq2mvOwT7+YfQ6VTQ3LseU+np4orGbpqma\nlLCuRe6wopO25tQ/AgAi1uf7UwKBgQDcFXj4RpAy7f9J4FDPd6HSMV8oii5OqqLp\nVksS/RCMFHx/BgPp6vmdXcqeN2+rhYOJxsZUu/+xdCxQgcpEz+54eH8y9g2Z3qSu\ngGuRRybrqQDFRz4TUY27dPZvGPKQtZ5lhG7N7A3xr/7ougYrwt20qOQZiM86EAye\nc11+R0iLUwKBgFh6Sj/AZJhIwF4OOeR/CsiGy7o35Zv15CEKYt0vi+2VINzMOsTZ\nB4Zv4oJpzDWz8KagEkp7kpkn+hnO1pwe9jwjztXXtyK3XjkICqMNl2aSHt7RfQp/\nnQNeZY9dXxCBl0AfRyFISCZ43vgP8Pt4pKiIqeka8UjYpPZ2It6+XByJAoGARpQY\nRD6U1dBfMzjdkXsDCR5OLvkJWq78KapDzyYa3WFgf3fVX3m8bQv8A3sxs6bQhSma\nxue3Wxgvce39iM3J4xZ5bEVeHT86Pr/uPxu7To3XMmzjalyYAErFEOHGQEQONO4g\nfqc53Y0cSVQG0Jfgc6RJ6ipmkm89LL9Ad1Oy3wMCgYBTeIwIW6AwBk7HpnT3JT8v\nOfLvptW/9F/EVLwMdvp8EsxHNoizZdBIrW1fV7ZpIchFotC8i9pnaiyZbDfufLXD\nzVM22L4aKH9qj8GS3g3IWBcFy3yiGrFp5m3AJVcoEUlzdtGnNwoUwou38OMVj7lM\nYOiCfwuWHQNHlCNYjJUbmA==\n-----END PRIVATE KEY-----\n",
+  "client_email": "prognosis-classifierprod@ai-agents-513605.iam.gserviceaccount.com",
+  "client_id": "115342537688175638288",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/prognosis-classifierprod%40ai-agents-513605.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

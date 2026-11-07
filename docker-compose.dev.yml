@@ -12,13 +12,6 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     restart: unless-stopped
-    volumes:
-      - type: bind
-        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/ai-agents-513605-1826f856cb89.json}
-        target: /app/ai-agents-513605-1826f856cb89.json
-        read_only: true
-        bind:
-          create_host_path: false
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8013/health"]
       interval: 30s
@@ -37,13 +30,6 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     restart: unless-stopped
-    volumes:
-      - type: bind
-        source: ${DEV_GOOGLE_CREDENTIALS_FILE:-./backend/ai-agents-513605-1826f856cb89.json}
-        target: /app/ai-agents-513605-1826f856cb89.json
-        read_only: true
-        bind:
-          create_host_path: false
     command: uvicorn api.recommendation_main:app --host 0.0.0.0 --port 8014
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8014/health"]

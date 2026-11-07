@@ -5,7 +5,7 @@ from types import SimpleNamespace
 try:
     from LLM.recommendation.recommendation_agent import RecommendationAgent
 except ModuleNotFoundError as exc:
-    if exc.name in {"langchain_google_vertexai", "langchain_core", "pydantic"}:
+    if exc.name in {"langchain_anthropic", "langchain_core", "pydantic"}:
         RecommendationAgent = None
     else:
         raise
