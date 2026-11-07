@@ -258,9 +258,25 @@ class RecommendationAgent:
     ):
         self.thinking_budget = thinking_budget
         self.max_tokens = max_tokens
+        # Stored on the agent (not read off self.llm) so the pricing guard works
+        # regardless of what self.llm actually is — real client, Mock, or a
+        # hand-rolled test fake with no .model attribute of its own.
+        self.model_name = os.getenv("RECOMMENDATION_MODEL", "claude-haiku-5-5")
         self.llm = self._build_llm(thinking_budget, max_tokens)
         # Tiny task (shorten one sentence): no thinking, short output.
         self._rewriter = self._build_llm(0, 256)
+
+    def _effective_model_name(self) -> str:
+        """Best-effort model name for the pricing guard. Normally self.model_name
+        (set above). Some tests build this agent via __new__ and only set self.llm
+        directly, bypassing __init__ entirely — fall back to self.llm.model for
+        those, and to "" (safe no-op — no cliff matches an empty string) if even
+        that isn't there, rather than raising AttributeError out of a cost guard."""
+        return (
+            getattr(self, "model_name", None)
+            or getattr(getattr(self, "llm", None), "model", None)
+            or ""
+        )
 
     @staticmethod
     def _build_llm(thinking_budget: Optional[int], max_tokens: int):
@@ -317,7 +333,7 @@ class RecommendationAgent:
                         SystemMessage(content=system),
                         HumanMessage(content=f"Chief complaint: {chief}\n{label} to shorten ({len(text)} characters): {text}"),
                     ]
-                    guard_messages_length(self._rewriter.model, rewrite_messages)
+                    guard_messages_length(self._effective_model_name(), rewrite_messages)
                     response = self._rewriter.invoke(rewrite_messages)
                 finally:
                     if timing_callback:
@@ -358,7 +374,7 @@ class RecommendationAgent:
             invoke_started = time.monotonic()
             response = None
             try:
-                guard_messages_length(self.llm.model, messages)
+                guard_messages_length(self._effective_model_name(), messages)
                 response = self.llm.invoke(messages)
             except PromptTooLargeForModelError:
                 # Don't relabel this one as a generic failure below — the

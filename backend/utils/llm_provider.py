@@ -79,14 +79,22 @@ def _build_anthropic_chat_llm(
 
     kwargs: Dict[str, Any] = dict(model=model, api_key=api_key, max_tokens=max_tokens)
 
-    # Claude's extended thinking requires an explicit budget_tokens >= 1024, and
-    # the API rejects a custom temperature while thinking is enabled — only one
-    # of the two branches below ever applies.
+    # CONFIRMED VIA REAL API CALL (2026-11-07) + corroborated by multiple sources:
+    # Claude's 5.x-generation models (e.g. claude-haiku-5-5, released 2026-10-07)
+    # reject `temperature` outright — ANY value, not just unusual ones — with
+    # 400 "temperature: Extra inputs are not permitted". They moved to adaptive
+    # thinking + an `effort` parameter instead. The same generation also rejects
+    # explicit thinking.budget_tokens (the old extended-thinking shape used below).
+    # No agent here has ever validated that a non-default temperature improves
+    # quality (the one benchmark that exists, bench_report.md, is about thinking
+    # budget, not temperature) — so rather than branch on model name (fragile the
+    # next time Anthropic renames a generation), temperature is simply never sent.
+    # If thinking_budget is ever set > 0 on a 5.x-generation model, expect the same
+    # class of 400 for budget_tokens — that path hasn't been fixed for this
+    # generation yet since every agent defaults to thinking disabled today.
     if thinking_budget and thinking_budget > 0:
         budget = max(thinking_budget, 1024)
         kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
         kwargs["max_tokens"] = max(max_tokens, budget + 256)
-    elif temperature is not None:
-        kwargs["temperature"] = temperature
 
     return ChatAnthropic(**kwargs)

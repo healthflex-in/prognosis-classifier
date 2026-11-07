@@ -16,15 +16,14 @@ from utils.recommendation_output import RecommendationOutput, valid_cached_recom
 
 @pytest.fixture
 def agent():
-    # Exercise the actual agent implementation with only its Vertex transport
-    # replaced. Prevent dotenv from loading local credentials during tests.
-    vertex = ModuleType("langchain_google_vertexai")
-    vertex.ChatVertexAI = Mock()
+    # Exercise the actual agent implementation, bypassing __init__ (below) so no
+    # real LLM client is ever constructed. Prevent dotenv from loading local
+    # credentials during tests.
     spec = importlib.util.spec_from_file_location(
         "tested_recommendation_agent", BACKEND / "LLM/recommendation/recommendation_agent.py"
     )
     module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {"langchain_google_vertexai": vertex}), patch("dotenv.load_dotenv"):
+    with patch("dotenv.load_dotenv"):
         spec.loader.exec_module(module)
     instance = module.RecommendationAgent.__new__(module.RecommendationAgent)
     instance.llm = Mock()

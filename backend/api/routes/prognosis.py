@@ -254,7 +254,7 @@ async def prognosis_health_check():
         return {
             "status": "healthy",
             "service": "Clinical Prognosis Agent",
-            "model": "gemini-3.5-flash-lite",
+            "model": agent.model_name,
             "features": [
                 "AI-powered provisional diagnosis",
                 "VALD assessment integration", 
